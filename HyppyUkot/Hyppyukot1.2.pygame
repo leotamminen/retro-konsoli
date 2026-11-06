@@ -1,0 +1,1127 @@
+#!/usr/bin/env python3
+# STOMPERS - couch multiplayer stomp platformer for Batocera (pygame 2).
+# Single file, no assets. Copy to /userdata/roms/pygame/
+import os, sys, math, random, array, json, threading
+import pygame
+
+W, H = 320, 180
+TILE = 16
+COLS, ROWS = W // TILE, 10          # 20 x 10 tile field, 20px HUD strip
+GRAV = 0.32
+JUMP_V = -5.6                       # ~49 px apex
+MAX_FALL = 6.0
+RUN = 1.7
+VERSION = "v1.2"
+PCOLORS = [((235, 70, 70), (140, 30, 40)), ((70, 150, 255), (30, 60, 150)),
+           ((90, 220, 90), (30, 120, 50)), ((250, 210, 60), (170, 120, 20))]
+PNAMES = ["RED", "BLUE", "GREEN", "YELLOW"]
+SFX = {}
+
+# ---------------- sound synthesis ----------------
+RATE = 22050
+def _tone(freqs, dur, vol=0.3, wave="sq", slide=0.0, noise=False):
+    n = int(RATE * dur); buf = array.array("h"); ph = 0.0
+    f0 = freqs
+    for i in range(n):
+        t = i / n
+        f = f0 * (1 + slide * t)
+        ph += f / RATE
+        if noise:
+            v = random.uniform(-1, 1)
+        elif wave == "sq":
+            v = 1.0 if (ph % 1) < 0.5 else -1.0
+        elif wave == "tri":
+            v = 4 * abs((ph % 1) - 0.5) - 1
+        else:
+            v = math.sin(ph * 6.283)
+        env = (1 - t) if t > 0.1 else 1.0
+        s = int(v * vol * env * 32767)
+        buf.append(s); buf.append(s)
+    return buf
+
+def make_sound(buf):
+    return pygame.mixer.Sound(buffer=buf.tobytes())
+
+def render_music():
+    """Dark synthwave / 808 loop, A minor, 118 BPM, 32 bars (~65 s):
+    intro 4, groove 8, lead 8, breakdown 4, full 8. Returns int16 stereo array."""
+    bpm = 118; beat = 60.0 / bpm; six = beat / 4
+    bar_n = int(RATE * beat * 4); s16 = bar_n // 16
+    def midi(n): return 440.0 * 2 ** ((n - 69) / 12)
+    rnd = random.Random(7)
+    # one-shot drums
+    def kick():
+        n = int(RATE * 0.32); out = []; ph = 0.0
+        for i in range(n):
+            t = i / RATE; f = 45 + 110 * math.exp(-t * 30); ph += f / RATE
+            out.append(math.tanh(2.2 * math.sin(6.283185 * ph)) * math.exp(-t * 9))
+        return out
+    def snare():
+        n = int(RATE * 0.2); out = []; lp = 0.0; ph = 0.0
+        for i in range(n):
+            t = i / RATE; nz = rnd.uniform(-1, 1); lp += 0.25 * (nz - lp)
+            ph += 185 / RATE
+            out.append(lp * 0.8 * math.exp(-t * 16) + 0.5 * math.sin(6.283185 * ph) * math.exp(-t * 30))
+        return out
+    def hat():
+        n = int(RATE * 0.05); out = []; lp = 0.0; lp2 = 0.0
+        for i in range(n):
+            nz = rnd.uniform(-1, 1); lp += 0.5 * (nz - lp); hp = nz - lp
+            lp2 += 0.45 * (hp - lp2)          # tame the top end
+            out.append(lp2 * math.exp(-i / RATE * 70))
+        return out
+    K, S, Hh = kick(), snare(), hat()
+    def b808(note, dur):
+        n = int(RATE * dur); out = []; ph = 0.0; f0 = midi(note)
+        for i in range(n):
+            t = i / RATE; f = f0 * (1 + 0.6 * math.exp(-t * 40)); ph += f / RATE
+            e = min(1.0, i / 60) * math.exp(-t * 1.6) * (1 if i < n - 300 else (n - i) / 300)
+            out.append(math.tanh(1.8 * math.sin(6.283185 * ph)) * e)
+        return out
+    def lead(note, dur):
+        n = int(RATE * dur); out = []; f = midi(note); p1 = p2 = 0.0; y1 = y2 = 0.0
+        for i in range(n):
+            p1 = (p1 + f * 1.004 / RATE) % 1; p2 = (p2 + f * 0.996 / RATE) % 1
+            x = (2 * p1 - 1) + (2 * p2 - 1) * 0.8
+            y1 += 0.11 * (x - y1); y2 += 0.11 * (y1 - y2)   # 2-pole low-pass ~ 450 Hz
+            e = min(1.0, i / 200) * (1 if i < n - 800 else max(0, (n - i) / 800))
+            out.append(y2 * e)
+        return out
+    def pad(notes, dur):
+        n = int(RATE * dur); out = [0.0] * n
+        for nt in notes:
+            for det in (0.997, 1.003):
+                f = midi(nt) * det; ph = 0.0; st = f / RATE
+                for i in range(n):
+                    ph += st; v = 4 * abs(ph % 1 - 0.5) - 1
+                    out[i] += v
+        a = int(RATE * 0.5)
+        for i in range(n):
+            out[i] *= min(1.0, i / a) * min(1.0, (n - i) / a)
+        return out
+    chords = [(33, [57, 60, 64]), (29, [57, 60, 65]), (31, [59, 62, 67]), (28, [55, 59, 64])]  # Am F G Em
+    mel = [[64, None, None, 62, None, 60, None, 57], [60, None, None, 57, None, 60, 62, None],
+           [62, None, None, 59, None, 62, 64, None], [64, None, 67, None, 64, None, 62, None]]
+    def mix(buf, src, pos, amp):
+        L = len(buf)
+        for i, v in enumerate(src):
+            j = pos + i
+            if j >= L: break
+            buf[j] += v * amp
+    cache = {}
+    def render_bar(ci, sec):
+        key = (ci, sec)
+        if key in cache: return cache[key]
+        buf = [0.0] * bar_n; root, tri = chords[ci]
+        mix(buf, pad(tri, beat * 4), 0, 0.028 if sec != "brk" else 0.04)
+        if sec in ("A", "B", "F"):
+            for k in (0, 8, 11): mix(buf, K, k * s16, 0.6)
+            for k in (4, 12): mix(buf, S, k * s16, 0.32)
+            for (k, d, o) in ((0, 3, 0), (6, 2, 0), (8, 3, 0), (14, 2, 12)):
+                mix(buf, b808(root + 12 + o, d * six), k * s16, 0.38)
+        if sec != "brk":
+            for k in range(0, 16, 2): mix(buf, Hh, k * s16, 0.10 if k % 4 else 0.06)
+        if sec == "intro":
+            mix(buf, b808(root + 12, 4 * six * 3), 0, 0.3)
+        if sec == "brk":
+            mix(buf, b808(root + 12, beat * 3.5), 0, 0.25)
+            for k in (0, 4, 8, 12): mix(buf, Hh, k * s16, 0.05)
+        if sec in ("B", "brk", "F"):
+            m = mel[ci]
+            for k, nt in enumerate(m):
+                if nt is None: continue
+                ln = 1
+                while k + ln < 8 and m[k + ln] is None: ln += 1
+                mix(buf, lead(nt, ln * 2 * six * 0.95), k * 2 * s16, 0.13 if sec != "brk" else 0.10)
+        cache[key] = buf
+        return buf
+    plan = [("intro", 4), ("A", 8), ("B", 8), ("brk", 4), ("F", 8)]
+    bars = []
+    for sec, nb in plan:
+        for i in range(nb): bars.append(render_bar(i % 4, sec))
+    peak = max(max(abs(v) for v in b) for b in cache.values()) or 1.0
+    g = 0.85 / math.tanh(1.0)
+    conv = {}
+    for k, b in cache.items():
+        a2 = array.array("h", bytes(4 * bar_n))
+        for i, v in enumerate(b):
+            sv = int(math.tanh(v / peak) * g * 0.95 * 32767 * 0.9)
+            a2[2 * i] = sv; a2[2 * i + 1] = sv
+        conv[id(b)] = a2
+    out = array.array("h")
+    for b in bars: out.extend(conv[id(b)])
+    return out
+
+def build_music():
+    return make_sound(render_music())
+
+MUSIC = None
+MUSIC_PLAYING = False
+DEFAULTS = {"music": True, "sfx": True, "music_vol": 6, "sfx_vol": 8, "wins": 5,
+            "shake": True, "levels": "mixed", "powerups": True}
+WINS_CHOICES = [3, 5, 7, 10]
+LEVEL_CHOICES = ["mixed", "classic", "obstacles"]
+SETTINGS = dict(DEFAULTS)
+def settings_path():
+    return os.environ.get("STOMPERS_SETTINGS") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "stompers_settings.json")
+
+def load_settings(path=None):
+    st = dict(DEFAULTS)
+    try:
+        with open(path or settings_path()) as f: d = json.load(f)
+        if not isinstance(d, dict): d = {}
+    except Exception:
+        d = {}
+    for k, v in d.items():
+        if k not in DEFAULTS: continue
+        dv = DEFAULTS[k]
+        if isinstance(dv, bool):
+            if isinstance(v, bool): st[k] = v
+        elif k in ("music_vol", "sfx_vol"):
+            if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10: st[k] = v
+        elif k == "wins":
+            if v in WINS_CHOICES and not isinstance(v, bool): st[k] = v
+        elif k == "levels":
+            if v in LEVEL_CHOICES: st[k] = v
+    SETTINGS.clear(); SETTINGS.update(st)
+    return st
+
+def save_settings(path=None):
+    path = path or settings_path(); tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f: json.dump(SETTINGS, f, indent=1); f.flush(); os.fsync(f.fileno())
+        os.replace(tmp, path); return True
+    except Exception as e:
+        print("settings not saved:", e); return False
+
+def apply_music():
+    global MUSIC_PLAYING
+    if MUSIC is None: return
+    try:
+        MUSIC.set_volume(0.55 * SETTINGS["music_vol"] / 10)
+        if SETTINGS["music"] and not MUSIC_PLAYING:
+            MUSIC.play(loops=-1); MUSIC_PLAYING = True
+        elif not SETTINGS["music"] and MUSIC_PLAYING:
+            MUSIC.stop(); MUSIC_PLAYING = False
+    except pygame.error:
+        pass
+
+def _music_thread():
+    global MUSIC
+    try:
+        m = build_music(); MUSIC = m
+        if not os.environ.get("STOMPERS_NO_MUSIC"): apply_music()
+    except Exception as e:
+        print("music disabled:", e)
+
+def init_audio():
+    try:
+        pygame.mixer.pre_init(RATE, -16, 2, 512); pygame.mixer.init(RATE, -16, 2, 512)
+        SFX["jump"] = make_sound(_tone(330, 0.12, 0.2, slide=1.2))
+        SFX["djump"] = make_sound(_tone(520, 0.12, 0.2, slide=1.0))
+        SFX["stomp"] = make_sound(_tone(160, 0.25, 0.35, noise=True))
+        SFX["boing"] = make_sound(_tone(200, 0.2, 0.3, wave="tri", slide=2.0))
+        SFX["power"] = make_sound(_tone(600, 0.3, 0.2, slide=1.5))
+        SFX["shield"] = make_sound(_tone(900, 0.2, 0.2, wave="tri", slide=-0.6))
+        SFX["fall"] = make_sound(_tone(500, 0.4, 0.25, slide=-0.8))
+        SFX["join"] = make_sound(_tone(660, 0.15, 0.2, slide=0.5))
+        SFX["win"] = make_sound(_tone(440, 0.6, 0.25, slide=1.0))
+        SFX["select"] = make_sound(_tone(800, 0.06, 0.15))
+        SFX["giant"] = make_sound(_tone(110, 0.5, 0.3, wave="tri", slide=1.5))
+        SFX["shrink"] = make_sound(_tone(900, 0.35, 0.2, wave="tri", slide=-0.7))
+        SFX["freeze"] = make_sound(_tone(1200, 0.4, 0.12, wave="sine", slide=-0.3))
+        SFX["ghost"] = make_sound(_tone(300, 0.5, 0.2, wave="sine", slide=0.8))
+        SFX["pound"] = make_sound(_tone(90, 0.35, 0.4, noise=True))
+        SFX["tele"] = make_sound(_tone(400, 0.25, 0.2, wave="sine", slide=3.0))
+        SFX["spring"] = make_sound(_tone(250, 0.25, 0.3, wave="tri", slide=2.5))
+        SFX["crumble"] = make_sound(_tone(120, 0.2, 0.2, noise=True))
+        if not os.environ.get('STOMPERS_NO_MUSIC'):
+            import threading; threading.Thread(target=_music_thread, daemon=True).start()
+    except Exception as e:
+        print("audio disabled:", e)
+
+def sfx(name):
+    if not SETTINGS["sfx"]: return
+    s = SFX.get(name)
+    if s:
+        s.set_volume(SETTINGS["sfx_vol"] / 10); s.play()
+
+# ---------------- input ----------------
+class Pad:
+    """Reads one device into a uniform state: x, jump, start, back."""
+    def __init__(self, kind, dev=None, keys=None):
+        self.kind, self.dev, self.keys = kind, dev, keys
+        self.prev = {}; self.cur = {}
+        self.id = ("kb%d" % id(keys)) if kind == "kb" else ("js%d" % dev.get_instance_id())
+
+    def poll(self, keystate):
+        c = {"x": 0.0, "y": 0.0, "jump": False, "start": False, "back": False, "act": False, "alt": False}
+        try:
+            if self.kind == "kb":
+                k = self.keys
+                c["x"] = (keystate[k[1]] - keystate[k[0]]) * 1.0
+                c["y"] = (keystate[k[3]] - keystate[k[2]]) * 1.0
+                c["jump"] = bool(keystate[k[4]] or keystate[k[2]])
+                c["act"] = bool(keystate[k[4]])
+                c["start"] = bool(keystate[k[5]]); c["alt"] = bool(keystate[k[6]])
+            elif self.kind == "gc":
+                g = self.dev
+                ax = g.get_axis(pygame.CONTROLLER_AXIS_LEFTX) / 32768
+                ay = g.get_axis(pygame.CONTROLLER_AXIS_LEFTY) / 32768
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_LEFT): ax = -1
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_RIGHT): ax = 1
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_UP): ay = -1
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_DOWN): ay = 1
+                c["x"] = ax if abs(ax) > 0.3 else 0; c["y"] = ay if abs(ay) > 0.5 else 0
+                a = g.get_button(pygame.CONTROLLER_BUTTON_A) or g.get_button(pygame.CONTROLLER_BUTTON_B)
+                c["jump"] = c["act"] = bool(a)
+                c["start"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_START))
+                c["back"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_BACK))
+                c["alt"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_Y))
+            else:  # raw joystick fallback (Linux hid-playstation layout)
+                j = self.dev
+                ax = j.get_axis(0) if j.get_numaxes() > 0 else 0
+                ay = j.get_axis(1) if j.get_numaxes() > 1 else 0
+                if j.get_numhats() > 0:
+                    hx, hy = j.get_hat(0)
+                    if hx: ax = hx
+                    if hy: ay = -hy
+                c["x"] = ax if abs(ax) > 0.3 else 0; c["y"] = ay if abs(ay) > 0.5 else 0
+                nb = j.get_numbuttons()
+                b = lambda i: nb > i and j.get_button(i)
+                c["jump"] = c["act"] = bool(b(0) or b(1))
+                c["back"] = bool(b(8)); c["start"] = bool(b(9)); c["alt"] = bool(b(2))
+        except pygame.error:
+            pass
+        self.prev, self.cur = self.cur, c
+
+    def pressed(self, k): return self.cur.get(k) and not self.prev.get(k)
+
+class FakePad(Pad):
+    def __init__(self, n):
+        self.kind = "fake"; self.id = "fake%d" % n; self.prev = {}; self.cur = {}; self.t = 0
+        self.dir = random.choice([-1, 1])
+    def poll(self, keystate):
+        self.t += 1
+        if random.random() < 0.02: self.dir = random.choice([-1, 0, 1])
+        c = {"x": self.dir, "y": 1 if random.random() < 0.03 else 0, "jump": random.random() < 0.08, "start": False, "back": False, "alt": False}
+        c["act"] = c["jump"]
+        self.prev, self.cur = self.cur, c
+
+# ---------------- level generation ----------------
+def gen_level(rng):
+    """Grid of solid tiles. Screen wraps horizontally. Guarantees each platform
+    row is within single-jump reach (3 tiles) of the row below."""
+    g = [[0] * COLS for _ in range(ROWS)]
+    # floor with up to 2 pits
+    for x in range(COLS): g[ROWS - 1][x] = 1
+    for _ in range(rng.randint(0, 2)):
+        px = rng.randint(3, COLS - 5); w = rng.randint(2, 3)
+        for x in range(px, px + w): g[ROWS - 1][x] = 0
+    # platform rows at y = 7, 4, (1 optional small)
+    for y in (ROWS - 4, ROWS - 7):
+        x = rng.randint(0, 2)
+        while x < COLS:
+            w = rng.randint(3, 6)
+            for i in range(x, min(COLS, x + w)): g[y][i] = 1
+            x += w + rng.randint(2, 4)
+    if rng.random() < 0.7:
+        for _ in range(20):   # top platform must have a stand-able row-3 tile just beside it
+            x = rng.randint(4, COLS - 9); w = rng.randint(3, 5); y3 = ROWS - 7
+            near = [i % COLS for i in list(range(x - 3, x)) + list(range(x + w, x + w + 3))]
+            if any(g[y3][i] for i in near):
+                for i in range(x, x + w): g[1][i] = 1
+                break
+    return g
+
+class Mover:
+    def __init__(s, x0, x1, y, w, v): s.x0, s.x1, s.y, s.w, s.v, s.x, s.dx = x0, x1, y, w, v, float(x0), 0.0
+    def update(s):
+        ox = s.x; s.x += s.v
+        if s.x < s.x0: s.x = s.x0; s.v = -s.v
+        if s.x > s.x1: s.x = s.x1; s.v = -s.v
+        s.dx = s.x - ox
+
+def add_obstacles(g, rng):
+    """Codes: 2 spikes (floor only), 3 crumbling, 4 jump pad. Returns (features, movers)."""
+    feats = rng.sample(["spikes", "movers", "pads", "crumble"], rng.randint(2, 3))
+    fy = ROWS - 1; movers = []
+    floor = [x for x in range(COLS) if g[fy][x] == 1]
+    if "spikes" in feats and floor:
+        for _ in range(rng.randint(1, 3)):
+            x = rng.choice(floor)
+            for i in range(x, min(COLS, x + rng.randint(1, 2))):
+                if g[fy][i] == 1: g[fy][i] = 2
+    if "pads" in feats and floor:
+        for _ in range(rng.randint(1, 2)):
+            x = rng.choice(floor)
+            if g[fy][x] == 1: g[fy][x] = 4
+    if "crumble" in feats:
+        segs = []
+        for y in (ROWS - 4, ROWS - 7):
+            x = 0
+            while x < COLS:
+                if g[y][x] == 1:
+                    x2 = x
+                    while x2 < COLS and g[y][x2] == 1: x2 += 1
+                    segs.append((y, x, x2)); x = x2
+                else: x += 1
+        for (y, x1, x2) in rng.sample(segs, min(len(segs), rng.randint(1, 2))):
+            for i in range(x1, x2): g[y][i] = 3
+    if "movers" in feats:
+        for y in rng.sample([(ROWS - 2) * TILE - 8, (ROWS - 5) * TILE - 8], rng.randint(1, 2)):
+            w = 32; x0 = rng.randint(0, W - w - 80); x1 = x0 + rng.randint(64, min(150, W - w - x0))
+            movers.append(Mover(x0, x1, y, w, rng.choice([-1, 1]) * rng.uniform(0.5, 0.9)))
+    return feats, movers
+
+def safe_spots(g):
+    out = []
+    for (x, y) in standable(g):
+        if g[y][x] == 1 and g[y][(x - 1) % COLS] != 2 and g[y][(x + 1) % COLS] != 2:
+            out.append((x, y))
+    return out
+
+def standable(g):
+    out = []
+    for y in range(1, ROWS):
+        for x in range(COLS):
+            if g[y][x] and g[y][x] != 2 and not g[y - 1][x] and (y < 2 or not g[y - 2][x]):
+                out.append((x, y))
+    return out
+
+def pick_spawns(g, n, rng):
+    spots = safe_spots(g); rng.shuffle(spots)
+    chosen = []
+    for min_d in (7, 5, 3, 0):
+        for s in spots:
+            if len(chosen) >= n: break
+            if all(min(abs(s[0] - c[0]), COLS - abs(s[0] - c[0])) + abs(s[1] - c[1]) >= min_d for c in chosen):
+                chosen.append(s)
+        if len(chosen) >= n: break
+    return [(x * TILE + 2, (y - 1) * TILE + 4) for x, y in chosen[:n]]
+
+# ---------------- entities ----------------
+class Particle:
+    __slots__ = ("x", "y", "vx", "vy", "life", "col", "g")
+    def __init__(s, x, y, vx, vy, life, col, g=0.15):
+        s.x, s.y, s.vx, s.vy, s.life, s.col, s.g = x, y, vx, vy, life, col, g
+
+class Player:
+    PW, PH = 12, 12
+    def __init__(s, idx, pad):
+        s.idx, s.pad = idx, pad
+        s.col, s.dark = PCOLORS[idx]
+        s.wins = 0; s.stomps = 0
+        s.spawn(0, 0)
+    def spawn(s, x, y):
+        s.x, s.y, s.vx, s.vy = float(x), float(y), 0.0, 0.0
+        s.alive = True; s.ground = False; s.jumps = 0; s.face = 1
+        s.speed_t = s.high_t = 0; s.shield = False; s.inv = 60
+        s.anim = 0.0; s.squash = 0.0; s.coyote = 0; s.buffer = 0
+        s.giant_t = s.shrink_t = s.ghost_t = s.pound_t = s.frozen = s.stun = 0
+        s.pounding = False; s.on_mp = None; s.PW = s.PH = 12
+    def rect(s): return pygame.Rect(int(s.x), int(s.y), s.PW, s.PH)
+
+POWER_TYPES = ["speed", "high", "shield", "giant", "shrink", "freeze", "ghost", "pound", "tele"]
+PCOL = {"speed": (255, 140, 0), "high": (180, 90, 255), "shield": (80, 240, 240), "giant": (230, 40, 40),
+        "shrink": (255, 120, 200), "freeze": (150, 210, 255), "ghost": (200, 200, 220), "pound": (160, 100, 40),
+        "tele": (40, 220, 140)}
+PLET = {"speed": "S", "high": "J", "shield": "D", "giant": "G", "shrink": "M", "freeze": "F",
+        "ghost": "H", "pound": "P", "tele": "T"}
+PDUR = {"speed": 600, "high": 600, "giant": 360, "shrink": 480, "ghost": 300, "pound": 600}
+TIMERS = [("speed", "speed_t"), ("high", "high_t"), ("giant", "giant_t"), ("shrink", "shrink_t"),
+          ("ghost", "ghost_t"), ("pound", "pound_t")]
+GIANT, SMALL = 16, 8
+
+class Power:
+    def __init__(s, kind, x, y): s.kind, s.x, s.y, s.t = kind, x, y, 0
+
+# ---------------- game ----------------
+class Game:
+    def __init__(s, screen, test=False):
+        s.screen = screen; s.test = test
+        s.canvas = pygame.Surface((W, H))
+        s.font = pygame.font.Font(None, 14); s.big = pygame.font.Font(None, 32)
+        s.pads = {}; s.players = []
+        s.kb_keys = [(pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s, pygame.K_SPACE, pygame.K_RETURN, pygame.K_TAB),
+                     (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN, pygame.K_RCTRL, pygame.K_KP_ENTER, pygame.K_BACKSPACE)]
+        for k in s.kb_keys: s.add_pad(Pad("kb", keys=k))
+        s.theme = 4; s.movers = []; s.crumb = {}; s.broken = {}; s.level_kind = "classic"; s.feats = []
+        s.set_i = 0; s.settings_from = "lobby"
+        s.state = "lobby"; s.t = 0; s.shake = 0; s.parts = []; s.menu_i = 0
+        s.quit_hold = 0; s.running = True; s.rng = random.Random()
+        s.level = gen_level(s.rng); s.powers = []; s.round_no = 0
+        s.stars = [(random.randrange(W), random.randrange(H), random.choice([1, 2])) for _ in range(40)]
+        s.tiles_surf = None; s.msg_t = 0; s.winner = None; s.paused_from = None
+
+    def add_pad(s, p):
+        s.pads[p.id] = p
+
+    def handle_device(s, ev):
+        if ev.type == pygame.JOYDEVICEADDED:
+            idx = ev.device_index; p = None
+            try:
+                from pygame._sdl2 import controller
+                if controller.is_controller(idx):
+                    p = Pad("gc", controller.Controller(idx))
+            except Exception:
+                p = None
+            if p is None:
+                p = Pad("js", pygame.joystick.Joystick(idx))
+            if p.kind == "gc":
+                p.id = "js%d" % pygame.joystick.Joystick(idx).get_instance_id()
+            s.add_pad(p)
+        elif ev.type == pygame.JOYDEVICEREMOVED:
+            pid = "js%d" % ev.instance_id
+            s.pads.pop(pid, None)
+            for pl in s.players:
+                if pl.pad.id == pid: pl.pad = FakeIdle()
+
+    # ----- level helpers -----
+    def solid(s, px, py):
+        tx = int(px // TILE) % COLS; ty = int(py // TILE)
+        if ty < 0 or ty >= ROWS: return False
+        v = s.level[ty][tx]
+        if v == 3 and (tx, ty) in s.broken: return False
+        return v != 0
+
+    def new_round(s):
+        s.round_no += 1
+        lv = SETTINGS["levels"]
+        obst = lv == "obstacles" or (lv == "mixed" and s.rng.random() < 0.5)
+        for _ in range(50):
+            s.level = gen_level(s.rng); s.movers = []; s.feats = []
+            if obst: s.feats, s.movers = add_obstacles(s.level, s.rng)
+            sp = pick_spawns(s.level, len(s.players), s.rng)
+            if len(sp) == len(s.players): break
+        s.level_kind = "obstacles" if obst else "classic"
+        s.theme = s.rng.randrange(len(THEMES)); s.crumb = {}; s.broken = {}
+        for p, (x, y) in zip(s.players, sp): p.spawn(x, y)
+        s.powers = []; s.power_timer = 240; s.tiles_surf = None
+        s.state = "ready"; s.t = 0; s.parts = []; s.winner = None
+
+    # ----- main update -----
+    def update(s):
+        ks = pygame.key.get_pressed()
+        for p in list(s.pads.values()): p.poll(ks)
+        for pl in s.players:
+            if pl.pad.id not in s.pads: pl.pad.poll(ks)
+        s.t += 1
+        # global quit combo: hold Back(Share)+Start ~1s
+        if any(p.cur.get("back") and p.cur.get("start") for p in s.pads.values()):
+            s.quit_hold += 1
+            if s.quit_hold > 60: s.running = False
+        else: s.quit_hold = 0
+        getattr(s, "up_" + s.state)()
+        # particles
+        for q in s.parts:
+            q.x += q.vx; q.y += q.vy; q.vy += q.g; q.life -= 1
+        s.parts = [q for q in s.parts if q.life > 0]
+        if s.shake > 0: s.shake -= 1
+
+    def burst(s, x, y, col, n=12, sp=2.0, life=30, g=0.15):
+        for _ in range(n):
+            a = random.uniform(0, 6.283); v = random.uniform(0.3, sp)
+            s.parts.append(Particle(x, y, math.cos(a) * v, math.sin(a) * v - 0.5, random.randint(life // 2, life), col, g))
+
+    def up_lobby(s):
+        joined = {pl.pad.id for pl in s.players}
+        for p in s.pads.values():
+            if p.id in joined:
+                if p.pressed("start") and len(s.players) >= 2: s.start_match(); return
+                if p.pressed("back"):
+                    s.players = [pl for pl in s.players if pl.pad is not p]
+                    for i, pl in enumerate(s.players): pl.idx = i; pl.col, pl.dark = PCOLORS[i]
+                continue
+            if (p.pressed("act") or p.pressed("start")) and len(s.players) < 4:
+                s.players.append(Player(len(s.players), p)); sfx("join")
+                s.burst(40 + 80 * (len(s.players) - 1), 100, PCOLORS[len(s.players) - 1][0], 20)
+        if any(p.pressed("alt") for p in s.pads.values()): s.open_settings("lobby"); return
+        if ks_quit(): s.open_menu()
+
+    def open_settings(s, frm):
+        s.settings_from = frm; s.state = "settings"; s.set_i = 0; sfx("select")
+
+    SET_ITEMS = [("MUSIC", "music"), ("SOUND FX", "sfx"), ("MUSIC VOLUME", "music_vol"), ("SFX VOLUME", "sfx_vol"),
+                 ("WINS TO WIN", "wins"), ("SCREEN SHAKE", "shake"), ("LEVELS", "levels"),
+                 ("POWER-UPS", "powerups"), ("BACK", None)]
+
+    def change_setting(s, key, d):
+        v = SETTINGS[key]
+        if isinstance(v, bool): SETTINGS[key] = not v
+        elif key in ("music_vol", "sfx_vol"): SETTINGS[key] = max(0, min(10, v + d))
+        elif key == "wins": SETTINGS[key] = WINS_CHOICES[(WINS_CHOICES.index(v) + d) % len(WINS_CHOICES)]
+        elif key == "levels": SETTINGS[key] = LEVEL_CHOICES[(LEVEL_CHOICES.index(v) + d) % len(LEVEL_CHOICES)]
+        save_settings(); apply_music(); sfx("select")
+
+    def up_settings(s):
+        n = len(s.SET_ITEMS)
+        for p in s.pads.values():
+            if p.cur.get("y") and not p.prev.get("y"):
+                s.set_i = (s.set_i + (1 if p.cur["y"] > 0 else -1)) % n; sfx("select")
+            key = s.SET_ITEMS[s.set_i][1]
+            if p.cur.get("x") and not p.prev.get("x") and key:
+                s.change_setting(key, 1 if p.cur["x"] > 0 else -1)
+            if p.pressed("act"):
+                if key is None: s.state = s.settings_from; return
+                s.change_setting(key, 1)
+            if p.pressed("start") or p.pressed("back") or p.pressed("alt"):
+                s.state = s.settings_from; return
+        if ks_quit(): s.state = s.settings_from
+
+    def start_match(s):
+        for pl in s.players: pl.wins = 0; pl.stomps = 0
+        s.round_no = 0; s.new_round()
+
+    def up_ready(s):
+        if s.t > 90: s.state = "play"; s.t = 0
+        s.common_pause()
+
+    def common_pause(s):
+        if ks_quit() or any(pl.pad.pressed("start") for pl in s.players): s.open_menu()
+
+    def open_menu(s):
+        s.paused_from = s.state; s.state = "menu"; s.menu_i = 0; sfx("select")
+
+    def up_menu(s):
+        opts = s.menu_opts()
+        for p in s.pads.values():
+            if p.cur.get("y") and not p.prev.get("y"):
+                s.menu_i = (s.menu_i + (1 if p.cur["y"] > 0 else -1)) % len(opts); sfx("select")
+            if p.pressed("act"):
+                o = opts[s.menu_i]
+                if o == "RESUME": s.state = s.paused_from
+                elif o == "SETTINGS": s.open_settings("menu")
+                elif o == "BACK TO LOBBY": s.state = "lobby"; s.players = []
+                elif o == "QUIT GAME": s.running = False
+                return
+            if p.pressed("start"): s.state = s.paused_from; return
+
+    def menu_opts(s):
+        return ["RESUME", "SETTINGS", "BACK TO LOBBY", "QUIT GAME"]
+
+    def up_play(s):
+        s.common_pause()
+        if s.state != "play": return
+        for mp in s.movers: mp.update()
+        s.update_crumble()
+        for pl in s.players:
+            if pl.alive: s.move(pl)
+        s.check_stomps()
+        # powerups
+        s.power_timer -= 1
+        if not SETTINGS["powerups"]: s.powers = []
+        elif s.power_timer <= 0 and len(s.powers) < 2:
+            spots = safe_spots(s.level)
+            if spots:
+                x, y = s.rng.choice(spots)
+                s.powers.append(Power(s.rng.choice(POWER_TYPES), x * TILE + 8, y * TILE - 8))
+            s.power_timer = s.rng.randint(300, 500)
+        for pw in s.powers[:]:
+            pw.t += 1
+            for pl in s.players:
+                if pl.alive and pl.rect().colliderect(pygame.Rect(pw.x - 5, pw.y - 5, 10, 10)):
+                    s.apply_power(pl, pw.kind); s.burst(pw.x, pw.y, PCOL[pw.kind], 16)
+                    s.powers.remove(pw); break
+        alive = [p for p in s.players if p.alive]
+        if len(alive) <= 1:
+            s.winner = alive[0] if alive else None
+            if s.winner: s.winner.wins += 1
+            s.state = "roundend"; s.t = 0; sfx("win")
+
+    def set_size(s, pl, n):
+        if pl.PW == n: return
+        bottom = pl.y + pl.PH; cx = pl.x + pl.PW / 2
+        pl.PW = pl.PH = n; pl.x = (cx - n / 2) % W; pl.y = bottom - n
+
+    def apply_power(s, pl, kind):
+        snd = {"giant": "giant", "shrink": "shrink", "freeze": "freeze", "ghost": "ghost", "tele": "tele"}.get(kind, "power")
+        sfx(snd)
+        if kind == "speed": pl.speed_t = PDUR[kind]
+        elif kind == "high": pl.high_t = PDUR[kind]
+        elif kind == "shield": pl.shield = True
+        elif kind == "giant": pl.giant_t = PDUR[kind]; pl.shrink_t = 0; s.set_size(pl, GIANT); s.shake = max(s.shake, 6)
+        elif kind == "shrink": pl.shrink_t = PDUR[kind]; pl.giant_t = 0; s.set_size(pl, SMALL)
+        elif kind == "ghost": pl.ghost_t = PDUR[kind]
+        elif kind == "pound": pl.pound_t = PDUR[kind]
+        elif kind == "freeze":
+            for o in s.players:
+                if o is pl or not o.alive or o.ghost_t: continue
+                if o.shield:
+                    o.shield = False; o.inv = 30; s.burst(o.x + 6, o.y + 6, PCOL["shield"], 12)
+                else:
+                    o.frozen = 120; s.burst(o.x + 6, o.y + 6, PCOL["freeze"], 14, 1.5, 30, 0.02)
+        elif kind == "tele":
+            spots = safe_spots(s.level) or [(int(pl.x) // TILE, int(pl.y) // TILE + 1)]
+            others = [o for o in s.players if o is not pl and o.alive]
+            def score(sp):
+                if not others: return random.random()
+                return min(abs(sp[0] * TILE - o.x) + abs(sp[1] * TILE - o.y) for o in others) + random.random() * 20
+            x, y = max(spots, key=score)
+            s.burst(pl.x + 6, pl.y + 6, PCOL["tele"], 20, 2, 25, 0)
+            pl.x = x * TILE + (TILE - pl.PW) / 2; pl.y = y * TILE - pl.PH; pl.vx = pl.vy = 0; pl.inv = max(pl.inv, 30)
+            pl.pounding = False; pl.on_mp = None
+            s.burst(pl.x + 6, pl.y + 6, PCOL["tele"], 20, 2, 25, 0)
+
+    def update_crumble(s):
+        for k in list(s.crumb):
+            s.crumb[k] -= 1
+            if s.crumb[k] <= 0:
+                del s.crumb[k]; s.broken[k] = 300; sfx("crumble")
+                s.burst(k[0] * TILE + 8, k[1] * TILE + 6, (150, 110, 70), 10, 1.5, 30)
+        for k in list(s.broken):
+            s.broken[k] -= 1
+            if s.broken[k] <= 0:
+                r = pygame.Rect(k[0] * TILE, k[1] * TILE, TILE, TILE)
+                if any(p.alive and p.rect().colliderect(r) for p in s.players): s.broken[k] = 10
+                else: del s.broken[k]
+
+    def tile_at(s, px, py):
+        tx = int(px // TILE) % COLS; ty = int(py // TILE)
+        if ty < 0 or ty >= ROWS: return 0, tx, ty
+        return s.level[ty][tx], tx, ty
+
+    def move(s, pl):
+        c = pl.pad.cur
+        if pl.frozen or pl.stun:
+            c = {}
+            if pl.frozen: pl.frozen -= 1; pl.vx *= 0.8
+            if pl.stun: pl.stun -= 1
+        for nm in ("giant_t", "shrink_t", "ghost_t", "pound_t"):
+            v = getattr(pl, nm)
+            if v:
+                setattr(pl, nm, v - 1)
+                if v == 1 and nm in ("giant_t", "shrink_t"): s.set_size(pl, 12)
+        if pl.on_mp: pl.x = (pl.x + pl.on_mp.dx) % W
+        spd = RUN * (1.5 if pl.speed_t > 0 else 1.0)
+        target = c.get("x", 0) * spd
+        pl.vx += (target - pl.vx) * (0.35 if pl.ground else 0.15)
+        if c.get("x"): pl.face = 1 if c["x"] > 0 else -1
+        if c and pl.pad.pressed("jump"): pl.buffer = 6
+        if pl.buffer > 0: pl.buffer -= 1
+        jv = JUMP_V * (1.25 if pl.high_t > 0 else 1.0) * (0.85 if pl.shrink_t else 1.0)
+        if pl.buffer and (pl.ground or pl.coyote > 0):
+            pl.vy = jv; pl.jumps = 1; pl.buffer = 0; pl.coyote = 0; pl.squash = -0.4; sfx("jump")
+            s.burst(pl.x + 6, pl.y + 12, (220, 220, 220), 5, 1, 12, 0.05)
+        elif pl.buffer and pl.jumps < 2:
+            pl.vy = jv * 0.9; pl.jumps = 2; pl.buffer = 0; sfx("djump")
+            s.burst(pl.x + 6, pl.y + 12, pl.col, 8, 1.5, 15, 0.05)
+        if not c.get("jump") and pl.vy < -2: pl.vy += GRAV  # variable jump height
+        pl.vy = min(MAX_FALL, pl.vy + GRAV)
+        if pl.pound_t and not pl.ground and not pl.pounding and c.get("y", 0) > 0.5:
+            pl.pounding = True; pl.vx = 0; sfx("djump")
+        if pl.pounding: pl.vy = 8.0; pl.vx = 0
+        if pl.speed_t: pl.speed_t -= 1
+        if pl.high_t: pl.high_t -= 1
+        if pl.inv: pl.inv -= 1
+        # horizontal
+        pl.x += pl.vx
+        for yy in (pl.y + 1, pl.y + pl.PH - 1):
+            if pl.vx > 0 and s.solid(pl.x + pl.PW, yy): pl.x = (int(pl.x + pl.PW) // TILE) * TILE - pl.PW - 0.01; pl.vx = 0
+            elif pl.vx < 0 and s.solid(pl.x, yy): pl.x = (int(pl.x) // TILE + 1) * TILE; pl.vx = 0
+        pl.x %= W
+        # vertical
+        was = pl.ground; pl.ground = False
+        prev_bottom = pl.y + pl.PH; pl.on_mp = None
+        pl.y += pl.vy
+        xs = (pl.x + 1, pl.x + pl.PW - 1)
+        if pl.vy >= 0 and any(s.solid(x, pl.y + pl.PH) for x in xs):
+            pl.y = (int(pl.y + pl.PH) // TILE) * TILE - pl.PH
+            if not was and pl.vy > 2: pl.squash = 0.4; s.burst(pl.x + 6, pl.y + 12, (200, 200, 200), 4, 0.8, 10, 0.05)
+            pl.vy = 0; pl.ground = True; pl.jumps = 0
+        elif pl.vy < 0 and any(s.solid(x, pl.y) for x in xs):
+            pl.y = (int(pl.y) // TILE + 1) * TILE; pl.vy = 0
+        if not pl.ground and pl.vy >= 0:
+            for mp in s.movers:
+                if pl.x + pl.PW > mp.x and pl.x < mp.x + mp.w and prev_bottom <= mp.y + 0.01 and pl.y + pl.PH >= mp.y:
+                    pl.y = mp.y - pl.PH; pl.vy = 0; pl.ground = True; pl.jumps = 0; pl.on_mp = mp; break
+        if pl.ground:
+            if pl.pounding: s.pound_land(pl)
+            code, tx, ty = s.tile_at(pl.x + pl.PW / 2, pl.y + pl.PH + 1) if not pl.on_mp else (0, 0, 0)
+            if code == 2:
+                if pl.shield:
+                    pl.shield = False; pl.inv = 45; pl.vy = JUMP_V; pl.ground = False; sfx("shield")
+                    s.burst(pl.x + 6, pl.y + 12, PCOL["shield"], 15)
+                else:
+                    s.kill(pl); return
+            elif code == 4:
+                pl.vy = JUMP_V * 1.55; pl.ground = False; pl.jumps = 1; pl.squash = -0.5; sfx("spring")
+                s.burst(pl.x + 6, pl.y + 12, (255, 220, 60), 10, 1.5, 15, 0.05)
+            if not pl.on_mp:
+                for fx in (pl.x + 1, pl.x + pl.PW - 1):
+                    code, tx, ty = s.tile_at(fx, pl.y + pl.PH + 1)
+                    if code == 3 and (tx, ty) not in s.crumb and (tx, ty) not in s.broken: s.crumb[(tx, ty)] = 40
+        if was and not pl.ground and pl.vy >= 0: pl.coyote = 5; pl.jumps = 1
+        elif pl.coyote: pl.coyote -= 1
+        pl.squash *= 0.8
+        pl.anim += abs(pl.vx) * 0.15
+        if pl.y > ROWS * TILE + 10:
+            s.kill(pl, fell=True)
+
+    def pound_land(s, pl):
+        pl.pounding = False; s.shake = max(s.shake, 10); sfx("pound")
+        s.burst(pl.x + pl.PW / 2, pl.y + pl.PH, PCOL["pound"], 25, 3, 25, 0.1)
+        for o in s.players:
+            if o is pl or not o.alive or o.ghost_t or o.giant_t: continue
+            dx = (o.x + o.PW / 2) - (pl.x + pl.PW / 2)
+            if abs(dx) < 48 and abs((o.y + o.PH) - (pl.y + pl.PH)) < 30:
+                if o.shield:
+                    o.shield = False; o.inv = 30; sfx("shield"); continue
+                o.vy = -5.5; o.vx = 3.0 if dx >= 0 else -3.0; o.stun = 40; o.ground = False; o.on_mp = None
+
+    def hit(s, a, b):
+        if b.inv or b.ghost_t: return
+        if b.shield:
+            b.shield = False; b.inv = 45; sfx("shield"); s.shake = max(s.shake, 5)
+            s.burst(b.x + 6, b.y + 6, PCOL["shield"], 20)
+        else:
+            a.stomps += 1; s.kill(b); sfx("boing")
+
+    def kill(s, pl, fell=False):
+        pl.alive = False
+        pl.pounding = False; pl.on_mp = None
+        s.shake = 14 if not fell else 8
+        sfx("fall" if fell else "stomp")
+        cx, cy = pl.x + 6, min(pl.y + 6, ROWS * TILE)
+        s.burst(cx, cy, pl.col, 30, 3.0, 45); s.burst(cx, cy, (255, 255, 255), 10, 2.0, 20)
+
+    def check_stomps(s):
+        al = [p for p in s.players if p.alive]
+        for a in al:
+            for b in al:
+                if a is b or not a.alive or not b.alive: continue
+                if a.ghost_t or b.ghost_t: continue
+                if a.giant_t and not b.giant_t:
+                    if a.rect().inflate(4, 4).colliderect(b.rect()): s.hit(a, b)
+                    continue
+                if a.vy > 0.5 and a.rect().colliderect(b.rect()) and a.y + a.PH - a.vy <= b.y + 4:
+                    if a.pounding: a.pounding = False
+                    a.vy = JUMP_V * 0.8; a.jumps = 1; a.squash = -0.4
+                    if b.giant_t: s.shake = max(s.shake, 3); continue
+                    s.hit(a, b)
+
+    def up_roundend(s):
+        if s.t > 60 and any(pl.pad.pressed("act") or pl.pad.pressed("start") for pl in s.players) or s.t > 480:
+            if any(p.wins >= SETTINGS["wins"] for p in s.players):
+                s.state = "matchend"; s.t = 0
+            else: s.new_round()
+        if s.t % 20 == 0 and s.winner:
+            s.burst(random.randrange(40, 280), random.randrange(30, 90), s.winner.col, 20, 2.5, 50, 0.05)
+
+    def up_matchend(s):
+        if s.t % 10 == 0:
+            s.burst(random.randrange(W), random.randrange(H // 2), random.choice(PCOLORS)[0], 15, 2.5, 50, 0.05)
+        if s.t > 90 and any(pl.pad.pressed("act") or pl.pad.pressed("start") for pl in s.players):
+            s.start_match()
+        if s.t > 90 and any(pl.pad.pressed("back") for pl in s.players):
+            s.state = "lobby"; s.players = []
+
+    # ----- drawing -----
+    def text(s, t, x, y, col=(255, 255, 255), font=None, center=True, shadow=True):
+        f = font or s.font
+        img = f.render(t, False, col)
+        r = img.get_rect()
+        if center: r.center = (x, y)
+        else: r.topleft = (x, y)
+        if shadow:
+            sh = f.render(t, False, (0, 0, 0)); s.canvas.blit(sh, r.move(1, 1))
+        s.canvas.blit(img, r)
+
+    def draw_bg(s):
+        c = s.canvas; th = THEMES[s.theme if s.state != "lobby" else 4]; a, b = th[2], th[3]
+        for i in range(0, H, 6):
+            k = i / H
+            pygame.draw.rect(c, tuple(int(a[j] + (b[j] - a[j]) * k) for j in range(3)), (0, i, W, 6))
+        for (x, y, z) in s.stars:
+            xx = int(x - s.t * 0.1 * z) % W
+            col = (120, 120, 170) if z == 1 else (200, 200, 255)
+            c.set_at((xx, y), col)
+        # distant hills
+        for i in range(0, W + 20, 20):
+            h = 30 + 12 * math.sin(i * 0.05 + s.round_no)
+            pygame.draw.rect(c, tuple(max(0, v - 10) for v in b), (i, H - h - 20, 20, h + 20))
+
+    def build_tiles(s):
+        surf = pygame.Surface((W, ROWS * TILE), pygame.SRCALPHA)
+        base, top = THEMES[s.theme][0], THEMES[s.theme][1]
+        for y in range(ROWS):
+            for x in range(COLS):
+                code = s.level[y][x]
+                if not code or code == 3: continue
+                r = pygame.Rect(x * TILE, y * TILE, TILE, TILE)
+                pygame.draw.rect(surf, base, r)
+                dk = tuple(max(0, v - 30) for v in base)
+                for (dx, dy) in ((3, 6), (10, 10), (6, 13), (12, 4)):
+                    surf.set_at((r.x + dx, r.y + dy), dk)
+                pygame.draw.rect(surf, dk, r, 1)
+                if y == 0 or not s.level[y - 1][x]:
+                    pygame.draw.rect(surf, top, (r.x, r.y, TILE, 4))
+                    pygame.draw.line(surf, tuple(min(255, v + 40) for v in top), (r.x, r.y), (r.right - 1, r.y))
+                if code == 2:   # spikes: steel teeth with red tips, sticking up
+                    pygame.draw.rect(surf, (90, 20, 30), (r.x, r.y, TILE, 4))
+                    for k in range(4):
+                        bx = r.x + k * 4
+                        pygame.draw.polygon(surf, (220, 220, 235), [(bx, r.y + 1), (bx + 2, r.y - 7), (bx + 4, r.y + 1)])
+                        pygame.draw.line(surf, (255, 60, 60), (bx + 2, r.y - 7), (bx + 2, r.y - 5))
+                elif code == 4:  # jump pad
+                    pygame.draw.rect(surf, (60, 60, 70), (r.x + 3, r.y - 2, 10, 3))
+                    pygame.draw.rect(surf, (255, 220, 60), (r.x + 1, r.y - 5, 14, 3))
+                    pygame.draw.line(surf, (255, 255, 180), (r.x + 2, r.y - 5), (r.x + 13, r.y - 5))
+        s.tiles_surf = surf
+
+    def draw_dynamic(s):
+        c = s.canvas
+        for y in range(ROWS):
+            for x in range(COLS):
+                if s.level[y][x] != 3 or (x, y) in s.broken: continue
+                j = (random.randint(-1, 1) if (x, y) in s.crumb else 0)
+                r = pygame.Rect(x * TILE + j, y * TILE, TILE, TILE)
+                pygame.draw.rect(c, (120, 85, 55), r); pygame.draw.rect(c, (70, 45, 30), r, 1)
+                pygame.draw.rect(c, (190, 150, 100), (r.x, r.y, TILE, 3))
+                pygame.draw.line(c, (60, 40, 25), (r.x + 4, r.y + 4), (r.x + 8, r.y + 10))
+                pygame.draw.line(c, (60, 40, 25), (r.x + 8, r.y + 10), (r.x + 12, r.y + 7))
+        for mp in s.movers:
+            r = pygame.Rect(int(mp.x), mp.y, mp.w, 6)
+            pygame.draw.rect(c, (40, 40, 60), r.inflate(2, 2)); pygame.draw.rect(c, (80, 230, 255), r)
+            for k in range(r.x + 3, r.right - 2, 6): pygame.draw.rect(c, (30, 120, 160), (k, r.y + 2, 3, 2))
+
+    def draw_player(s, pl, x=None, y=None, scale=1):
+        c = s.canvas
+        ingame = x is None
+        if ingame and pl.inv and (pl.inv // 4) % 2 and s.state == "play": return
+        if ingame and pl.ghost_t and s.t % 2: return      # flicker = see-through
+        hb = getattr(pl, "PW", 12) if ingame else 12
+        vis = 20 if ingame and pl.giant_t else hb
+        px = int(pl.x + hb / 2 - vis / 2) if ingame else x
+        py = int(pl.y + hb - vis) if ingame else y
+        sc = max(1, round(vis * scale / 12)) if vis >= 12 else 1
+        sq = getattr(pl, "squash", 0)
+        w = int(vis * (1 + sq) * scale); h = int(vis * (1 - sq) * scale)
+        bx = px + (vis * scale - w) // 2; by = py + vis * scale - h
+        col = pl.col
+        if ingame and pl.frozen: col = (170, 220, 255)
+        if ingame and pl.ghost_t: col = tuple((v + 255) // 2 for v in pl.col)
+        for ox in ((0, -W, W) if ingame else (0,)):
+            r = pygame.Rect(bx + ox, by, w, h)
+            if ingame and pl.giant_t:
+                pygame.draw.rect(c, (255, 80, 80) if s.t % 8 < 4 else (255, 200, 60), r.inflate(4, 4), 1, border_radius=4)
+            pygame.draw.rect(c, pl.dark, r.inflate(2, 2), border_radius=3)
+            pygame.draw.rect(c, col, r, border_radius=3)
+            pygame.draw.rect(c, tuple(min(255, v + 60) for v in col), (r.x + 2, r.y + 1, max(1, w - 6), 2))
+            f = getattr(pl, "face", 1)
+            if vis >= 12:
+                ex = r.centerx + f * 2 * sc
+                for d in (-2 * sc, 2 * sc):
+                    pygame.draw.rect(c, (255, 255, 255), (ex + d - sc, r.y + 3 * sc, 2 * sc, 3 * sc))
+                    pygame.draw.rect(c, (0, 0, 0), (ex + d + (f > 0) * sc - sc // 2, r.y + 4 * sc, sc, 2 * sc))
+            else:
+                pygame.draw.rect(c, (0, 0, 0), (r.centerx + f, r.y + 2, 1, 2))
+                pygame.draw.rect(c, (0, 0, 0), (r.centerx + f - 3, r.y + 2, 1, 2))
+            ph = int(getattr(pl, "anim", 0)) % 2 if getattr(pl, "ground", True) and abs(getattr(pl, "vx", 0)) > 0.3 else 0
+            fw = max(2, vis // 4) * scale
+            pygame.draw.rect(c, pl.dark, (r.x + 1 + ph * sc, r.bottom, fw, 2 * sc))
+            pygame.draw.rect(c, pl.dark, (r.right - 1 - fw - ph * sc, r.bottom, fw, 2 * sc))
+            if not ingame: continue
+            if pl.shield:
+                pygame.draw.circle(c, PCOL["shield"], r.center, vis // 2 + 4 + int(math.sin(s.t * 0.2)), 1)
+            if pl.frozen:
+                pygame.draw.rect(c, (220, 245, 255), r.inflate(4, 4), 1)
+                if s.t % 6 == 0: s.parts.append(Particle(r.x + random.randint(0, w), r.y, 0, 0.3, 15, (220, 245, 255), 0))
+            if pl.stun:
+                for k in range(3):
+                    a = s.t * 0.2 + k * 2.1
+                    c.set_at((int(r.centerx + math.cos(a) * 7), int(r.y - 3 + math.sin(a) * 2)), (255, 255, 120))
+            if pl.pound_t:
+                pygame.draw.polygon(c, PCOL["pound"] if not pl.pounding else (255, 160, 60),
+                                    [(r.centerx - 3, r.y - 6), (r.centerx + 3, r.y - 6), (r.centerx, r.y - 3)])
+            if pl.pounding and s.t % 2 == 0:
+                s.parts.append(Particle(r.centerx + random.randint(-4, 4), r.y, 0, -0.5, 8, (255, 200, 120), 0))
+            if pl.speed_t and s.t % 3 == 0:
+                s.parts.append(Particle(r.centerx - f * 6, r.bottom - 2, -f * 0.5, 0, 10, PCOL["speed"], 0))
+            if pl.high_t and s.t % 4 == 0:
+                s.parts.append(Particle(r.centerx, r.bottom, random.uniform(-0.3, 0.3), 0.5, 10, PCOL["high"], 0))
+            if pl.shrink_t and s.t % 8 == 0:
+                s.parts.append(Particle(r.centerx, r.y, random.uniform(-0.5, 0.5), -0.5, 12, PCOL["shrink"], 0))
+            # timer bar above the head for the longest-running timed power
+            act = [(getattr(pl, at), k) for k, at in TIMERS if getattr(pl, at)]
+            if act:
+                t, k = max(act)
+                bw = max(4, int(14 * t / PDUR[k]))
+                pygame.draw.rect(c, (0, 0, 0), (r.centerx - 8, r.y - 10, 16, 3))
+                pygame.draw.rect(c, PCOL[k], (r.centerx - 7, r.y - 9, bw, 1))
+
+    def draw(s):
+        c = s.canvas
+        s.draw_bg()
+        st = s.state if s.state != "menu" else s.paused_from
+        if s.state == "settings" and s.settings_from == "menu": st = s.paused_from
+        if st == "lobby": s.draw_lobby()
+        elif st in ("ready", "play", "roundend"):
+            if s.tiles_surf is None: s.build_tiles()
+            c.blit(s.tiles_surf, (0, 0))
+            s.draw_dynamic()
+            for pw in s.powers:
+                yy = pw.y + math.sin(pw.t * 0.1) * 2
+                pygame.draw.circle(c, (255, 255, 255), (pw.x, int(yy)), 6)
+                pygame.draw.circle(c, PCOL[pw.kind], (pw.x, int(yy)), 5)
+                if pw.kind == "ghost": pygame.draw.circle(c, (90, 90, 120), (pw.x, int(yy)), 5, 1)
+                s.text(PLET[pw.kind], pw.x, int(yy) + 1, (255, 255, 255) if pw.kind not in ("freeze", "ghost") else (20, 40, 90), shadow=False)
+            for pl in s.players:
+                if pl.alive: s.draw_player(pl)
+            s.draw_parts()
+            s.draw_hud()
+            if st == "ready":
+                n = 3 - s.t // 30
+                s.text(str(max(1, n)) if s.t < 90 else "GO!", W // 2, 70, (255, 255, 100), s.big)
+                s.text("ROUND %d" % s.round_no, W // 2, 45)
+                if s.level_kind == "obstacles":
+                    s.text("OBSTACLES: " + " ".join(f.upper() for f in s.feats), W // 2, 100, (255, 180, 120))
+            if st == "roundend": s.draw_scores()
+        elif st == "matchend": s.draw_matchend(); s.draw_parts()
+        elif st == "settings": s.draw_settings()
+        if s.state == "lobby": s.draw_parts()
+        if s.state == "menu": s.draw_menu()
+        if s.state == "settings" and s.settings_from == "menu": s.draw_settings()
+        if s.quit_hold > 5:
+            pygame.draw.rect(c, (0, 0, 0), (W // 2 - 50, 4, 100, 12))
+            pygame.draw.rect(c, (230, 60, 60), (W // 2 - 49, 5, int(98 * s.quit_hold / 60), 10))
+            s.text("QUITTING...", W // 2, 10)
+        # present with shake
+        on = s.shake and SETTINGS["shake"]
+        ox = random.randint(-s.shake, s.shake) // 3 if on else 0
+        oy = random.randint(-s.shake, s.shake) // 3 if on else 0
+        s.screen.fill((0, 0, 0))
+        s.screen.blit(c, (ox, oy))
+
+    def draw_parts(s):
+        for q in s.parts:
+            sz = 2 if q.life > 10 else 1
+            pygame.draw.rect(s.canvas, q.col, (int(q.x), int(q.y), sz, sz))
+
+    def draw_hud(s):
+        y0 = ROWS * TILE
+        pygame.draw.rect(s.canvas, (10, 10, 20), (0, y0, W, H - y0))
+        for i, pl in enumerate(s.players):
+            x = 6 + i * 80
+            pygame.draw.rect(s.canvas, pl.col if pl.alive else (70, 70, 70), (x, y0 + 4, 8, 8))
+            s.text("%s %d" % (PNAMES[pl.idx], pl.wins), x + 12, y0 + 3, (230, 230, 230), center=False, shadow=False)
+            act = [k for k, at in TIMERS if getattr(pl, at)] + (["shield"] if pl.shield else [])
+            for j, k in enumerate(act[:3]):
+                pygame.draw.rect(s.canvas, PCOL[k], (x + 56 + j * 7, y0 + 4, 6, 8))
+                s.text(PLET[k], x + 59 + j * 7, y0 + 8, (0, 0, 0), shadow=False)
+
+    def draw_lobby(s):
+        bob = int(math.sin(s.t * 0.08) * 3)
+        s.text("STOMPERS", W // 2, 28 + bob, (255, 220, 80), s.big)
+        s.text(VERSION, W - 14, 8, (120, 120, 160), shadow=False)
+        s.text("Jump on heads. Last one standing wins!", W // 2, 50, (200, 200, 255))
+        for i in range(4):
+            x = 40 + i * 80; y = 100
+            r = pygame.Rect(x - 34, 66, 68, 74)
+            pygame.draw.rect(s.canvas, (20, 20, 40), r, border_radius=4)
+            pygame.draw.rect(s.canvas, PCOLORS[i][1], r, 1, border_radius=4)
+            if i < len(s.players):
+                pl = s.players[i]
+                pl.face = 1; pl.anim = s.t * 0.1
+                s.draw_player(pl, x - 12, 84 + (int(abs(math.sin(s.t * 0.1 + i)) * -6)), 2)
+                s.text(PNAMES[i], x, 125, PCOLORS[i][0])
+            else:
+                if (s.t // 30) % 2: s.text("PRESS X", x, 98, (150, 150, 150))
+                s.text("TO JOIN", x, 112, (100, 100, 100))
+        msg = "OPTIONS: START  SHARE: LEAVE  TRIANGLE: SETTINGS" if len(s.players) >= 2 else "Need 2+ players   TRIANGLE: SETTINGS"
+        s.text(msg, W // 2, 152, (255, 255, 255))
+        s.text("First to %d wins. Hold SHARE+OPTIONS to quit." % SETTINGS["wins"], W // 2, 168, (140, 140, 170))
+
+    def draw_scores(s):
+        pygame.draw.rect(s.canvas, (0, 0, 0), (50, 30, 220, 120), border_radius=6)
+        pygame.draw.rect(s.canvas, (255, 255, 255), (50, 30, 220, 120), 1, border_radius=6)
+        if s.winner: s.text("%s WINS THE ROUND!" % PNAMES[s.winner.idx], W // 2, 44, s.winner.col)
+        else: s.text("DRAW!", W // 2, 44)
+        for i, pl in enumerate(s.players):
+            y = 64 + i * 18
+            s.draw_player(pl, 64, y - 6)
+            nw = SETTINGS["wins"]; bw = min(14, 140 // nw)
+            for k in range(nw):
+                col = (255, 220, 60) if k < pl.wins else (60, 60, 60)
+                pygame.draw.rect(s.canvas, col, (88 + k * bw, y - 4, bw - 3, 8))
+            s.text("x%d" % pl.stomps, 236, y - 4, (180, 180, 180), center=False)
+        if s.t > 60 and (s.t // 30) % 2: s.text("Press X for next round", W // 2, 140, (200, 200, 200))
+
+    def draw_matchend(s):
+        w = max(s.players, key=lambda p: p.wins) if s.players else None
+        if w:
+            s.text("%s IS THE CHAMPION!" % PNAMES[w.idx], W // 2, 40, w.col, s.big)
+            s.draw_player(w, W // 2 - 18, 70 + int(abs(math.sin(s.t * 0.15)) * -10), 3)
+        s.text("X: rematch    SHARE: lobby", W // 2, 150)
+
+    def draw_settings(s):
+        pygame.draw.rect(s.canvas, (0, 0, 0), (60, 14, 200, 154), border_radius=6)
+        pygame.draw.rect(s.canvas, (80, 230, 255), (60, 14, 200, 154), 1, border_radius=6)
+        s.text("SETTINGS", W // 2, 24, (255, 220, 80))
+        for i, (lab, key) in enumerate(s.SET_ITEMS):
+            y = 38 + i * 14; sel = i == s.set_i
+            colr = (255, 255, 100) if sel else (190, 190, 190)
+            if sel: pygame.draw.rect(s.canvas, (40, 40, 70), (64, y - 6, 192, 12))
+            if key is None:
+                s.text("BACK", W // 2, y, colr); continue
+            s.text(lab, 70, y - 5, colr, center=False)
+            v = SETTINGS[key]
+            if isinstance(v, bool): val = "ON" if v else "OFF"
+            elif key in ("music_vol", "sfx_vol"):
+                for k in range(10):
+                    pygame.draw.rect(s.canvas, (80, 230, 255) if k < v else (50, 50, 60), (182 + k * 7, y - 3, 5, 6))
+                continue
+            else: val = str(v).upper()
+            s.text(("< %s >" if sel else "%s") % val, 215, y, colr)
+        s.text("Up/Down select, Left/Right or X change", W // 2, 163, (120, 120, 150))
+
+    def draw_menu(s):
+        pygame.draw.rect(s.canvas, (0, 0, 0), (90, 50, 140, 80), border_radius=6)
+        pygame.draw.rect(s.canvas, (255, 255, 255), (90, 50, 140, 80), 1, border_radius=6)
+        s.text("PAUSED", W // 2, 62, (255, 220, 80))
+        for i, o in enumerate(s.menu_opts()):
+            sel = i == s.menu_i
+            s.text(("> %s <" if sel else "%s") % o, W // 2, 82 + i * 16, (255, 255, 100) if sel else (180, 180, 180))
+
+THEMES = [((110, 70, 40), (80, 200, 80), (20, 15, 50), (60, 35, 90)),     # night meadow
+          ((70, 90, 110), (200, 230, 255), (10, 20, 45), (40, 60, 100)),   # ice
+          ((90, 60, 100), (230, 120, 200), (30, 10, 40), (90, 30, 80)),    # neon pink
+          ((60, 100, 70), (240, 200, 80), (15, 30, 30), (50, 80, 60)),     # jungle
+          ((50, 50, 70), (80, 220, 240), (5, 5, 18), (30, 20, 60))]       # cyber
+
+class FakeIdle(Pad):
+    def __init__(s): s.kind = "idle"; s.id = "idle%d" % id(s); s.prev = {}; s.cur = {}
+    def poll(s, ks): s.prev, s.cur = s.cur, {}
+
+_ESC = [False]
+def ks_quit():
+    v = _ESC[0]; _ESC[0] = False; return v
+
+def main():
+    os.environ.setdefault("SDL_GAMECONTROLLER_ALLOW_BACKGROUND_EVENTS", "1")
+    load_settings()
+    init_audio()
+    pygame.init()
+    flags = pygame.SCALED | pygame.FULLSCREEN
+    if os.environ.get("STOMPERS_WINDOWED"): flags = pygame.SCALED
+    screen = pygame.display.set_mode((W, H), flags, vsync=1)
+    pygame.display.set_caption("STOMPERS")
+    pygame.mouse.set_visible(False)
+    try:
+        from pygame._sdl2 import controller; controller.init()
+    except Exception: pass
+    g = Game(screen)
+    clock = pygame.time.Clock()
+    while g.running:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT: g.running = False
+            elif ev.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED): g.handle_device(ev)
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE: _ESC[0] = True
+        g.update(); g.draw()
+        pygame.display.flip()
+        clock.tick(60)
+    pygame.quit()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,686 @@
+#!/usr/bin/env python3
+# STOMPERS - couch multiplayer stomp platformer for Batocera (pygame 2).
+# Single file, no assets. Copy to /userdata/roms/pygame/
+import os, sys, math, random, array
+import pygame
+
+W, H = 320, 180
+TILE = 16
+COLS, ROWS = W // TILE, 10          # 20 x 10 tile field, 20px HUD strip
+GRAV = 0.32
+JUMP_V = -5.6                       # ~49 px apex
+MAX_FALL = 6.0
+RUN = 1.7
+WINS_TO_WIN = 5
+PCOLORS = [((235, 70, 70), (140, 30, 40)), ((70, 150, 255), (30, 60, 150)),
+           ((90, 220, 90), (30, 120, 50)), ((250, 210, 60), (170, 120, 20))]
+PNAMES = ["RED", "BLUE", "GREEN", "YELLOW"]
+SFX = {}
+
+# ---------------- sound synthesis ----------------
+RATE = 22050
+def _tone(freqs, dur, vol=0.3, wave="sq", slide=0.0, noise=False):
+    n = int(RATE * dur); buf = array.array("h"); ph = 0.0
+    f0 = freqs
+    for i in range(n):
+        t = i / n
+        f = f0 * (1 + slide * t)
+        ph += f / RATE
+        if noise:
+            v = random.uniform(-1, 1)
+        elif wave == "sq":
+            v = 1.0 if (ph % 1) < 0.5 else -1.0
+        elif wave == "tri":
+            v = 4 * abs((ph % 1) - 0.5) - 1
+        else:
+            v = math.sin(ph * 6.283)
+        env = (1 - t) if t > 0.1 else 1.0
+        s = int(v * vol * env * 32767)
+        buf.append(s); buf.append(s)
+    return buf
+
+def make_sound(buf):
+    return pygame.mixer.Sound(buffer=buf.tobytes())
+
+def render_music():
+    """Relaxed lo-fi loop: 88 BPM, soft sine/triangle, 16 bars (~44 s). Returns int16 stereo array."""
+    bpm = 88; beat = 60.0 / bpm; bar_n = int(RATE * beat * 4)
+    def midi(n): return 440.0 * 2 ** ((n - 69) / 12)
+    # Cmaj7 Am7 Fmaj7 G6 / Em7 Am7 Dm7 G7  (two 8-bar halves, second with melody variation)
+    chords = [(48, [60, 64, 67, 71]), (45, [57, 60, 64, 67]), (41, [57, 60, 64, 65]), (43, [59, 62, 64, 67]),
+              (40, [59, 62, 64, 67]), (45, [57, 60, 64, 67]), (38, [57, 60, 62, 65]), (43, [59, 62, 65, 67])]
+    melA = [[76, None, 74, None], [72, None, None, None], [69, None, 72, None], [74, None, None, None],
+            [71, None, 74, None], [72, None, 69, None], [69, None, 65, None], [67, None, None, None]]
+    melB = [[None, None, 79, None], [76, None, None, None], [77, None, 76, None], [74, None, None, None],
+            [74, None, 76, None], [72, None, None, None], [74, None, 72, None], [71, None, None, None]]
+    TW = 1024
+    sine = [math.sin(6.283185 * i / TW) for i in range(TW)]
+    tri = [4 * abs(i / TW - 0.5) - 1 for i in range(TW)]
+    def add(buf, start, f, dur, amp, table, att=0.02, rel=0.3):
+        n = int(RATE * dur); a = max(1, int(RATE * att)); r = max(1, int(RATE * rel))
+        step = f * TW / RATE; ph = 0.0; L = len(buf)
+        for i in range(n):
+            j = start + i
+            if j >= L: j -= L          # wrap tail into loop start for seamless loop
+            e = i / a if i < a else (1.0 if i < n - r else (n - i) / r)
+            buf[j] += table[int(ph) & 1023] * amp * e
+            ph += step
+    total = bar_n * 16; buf = [0.0] * total
+    for bar in range(16):
+        root, ch = chords[bar % 8]; mel = (melA if bar < 8 else melB)[bar % 8]
+        t0 = bar * bar_n
+        for nt in ch:  # soft pad
+            add(buf, t0, midi(nt), beat * 4, 0.045, tri, att=0.4, rel=0.8)
+        for k, bt in enumerate((0, 2.5)):  # laid-back bass
+            add(buf, t0 + int(bt * beat * RATE), midi(root), beat * (2.3 if k == 0 else 1.4), 0.22, sine, att=0.01, rel=0.4)
+        for k in range(8):  # gentle arpeggio, eighth notes
+            nt = ch[[0, 1, 2, 3, 2, 1, 2, 3][k]] + 12
+            add(buf, t0 + int(k * beat / 2 * RATE), midi(nt), beat * 0.9, 0.035, sine, att=0.01, rel=0.35)
+        for k, nt in enumerate(mel):  # soft melody
+            if nt: add(buf, t0 + int(k * beat * RATE), midi(nt), beat * 1.6, 0.07, sine, att=0.05, rel=0.6)
+    out = array.array("h", bytes(4 * total))
+    for i, v in enumerate(buf):
+        sv = int(max(-1.0, min(1.0, v)) * 32767); out[2 * i] = sv; out[2 * i + 1] = sv
+    return out
+
+def build_music():
+    return make_sound(render_music())
+
+def _music_thread():
+    global MUSIC
+    try:
+        m = build_music(); m.set_volume(0.35); MUSIC = m
+        if not os.environ.get("STOMPERS_NO_MUSIC"): m.play(loops=-1)
+    except Exception as e:
+        print("music disabled:", e)
+
+def init_audio():
+    global MUSIC
+    MUSIC = None
+    try:
+        pygame.mixer.pre_init(RATE, -16, 2, 512); pygame.mixer.init(RATE, -16, 2, 512)
+        SFX["jump"] = make_sound(_tone(330, 0.12, 0.2, slide=1.2))
+        SFX["djump"] = make_sound(_tone(520, 0.12, 0.2, slide=1.0))
+        SFX["stomp"] = make_sound(_tone(160, 0.25, 0.35, noise=True))
+        SFX["boing"] = make_sound(_tone(200, 0.2, 0.3, wave="tri", slide=2.0))
+        SFX["power"] = make_sound(_tone(600, 0.3, 0.2, slide=1.5))
+        SFX["shield"] = make_sound(_tone(900, 0.2, 0.2, wave="tri", slide=-0.6))
+        SFX["fall"] = make_sound(_tone(500, 0.4, 0.25, slide=-0.8))
+        SFX["join"] = make_sound(_tone(660, 0.15, 0.2, slide=0.5))
+        SFX["win"] = make_sound(_tone(440, 0.6, 0.25, slide=1.0))
+        SFX["select"] = make_sound(_tone(800, 0.06, 0.15))
+        if not os.environ.get('STOMPERS_NO_MUSIC'):
+            import threading; threading.Thread(target=_music_thread, daemon=True).start()
+    except Exception as e:
+        print("audio disabled:", e)
+
+def sfx(name):
+    s = SFX.get(name)
+    if s: s.play()
+
+# ---------------- input ----------------
+class Pad:
+    """Reads one device into a uniform state: x, jump, start, back."""
+    def __init__(self, kind, dev=None, keys=None):
+        self.kind, self.dev, self.keys = kind, dev, keys
+        self.prev = {}; self.cur = {}
+        self.id = ("kb%d" % id(keys)) if kind == "kb" else ("js%d" % dev.get_instance_id())
+
+    def poll(self, keystate):
+        c = {"x": 0.0, "y": 0.0, "jump": False, "start": False, "back": False, "act": False}
+        try:
+            if self.kind == "kb":
+                k = self.keys
+                c["x"] = (keystate[k[1]] - keystate[k[0]]) * 1.0
+                c["y"] = (keystate[k[3]] - keystate[k[2]]) * 1.0
+                c["jump"] = bool(keystate[k[4]] or keystate[k[2]])
+                c["act"] = bool(keystate[k[4]])
+                c["start"] = bool(keystate[k[5]])
+            elif self.kind == "gc":
+                g = self.dev
+                ax = g.get_axis(pygame.CONTROLLER_AXIS_LEFTX) / 32768
+                ay = g.get_axis(pygame.CONTROLLER_AXIS_LEFTY) / 32768
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_LEFT): ax = -1
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_RIGHT): ax = 1
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_UP): ay = -1
+                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_DOWN): ay = 1
+                c["x"] = ax if abs(ax) > 0.3 else 0; c["y"] = ay if abs(ay) > 0.5 else 0
+                a = g.get_button(pygame.CONTROLLER_BUTTON_A) or g.get_button(pygame.CONTROLLER_BUTTON_B)
+                c["jump"] = c["act"] = bool(a)
+                c["start"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_START))
+                c["back"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_BACK))
+            else:  # raw joystick fallback (Linux hid-playstation layout)
+                j = self.dev
+                ax = j.get_axis(0) if j.get_numaxes() > 0 else 0
+                ay = j.get_axis(1) if j.get_numaxes() > 1 else 0
+                if j.get_numhats() > 0:
+                    hx, hy = j.get_hat(0)
+                    if hx: ax = hx
+                    if hy: ay = -hy
+                c["x"] = ax if abs(ax) > 0.3 else 0; c["y"] = ay if abs(ay) > 0.5 else 0
+                nb = j.get_numbuttons()
+                b = lambda i: nb > i and j.get_button(i)
+                c["jump"] = c["act"] = bool(b(0) or b(1))
+                c["back"] = bool(b(8)); c["start"] = bool(b(9))
+        except pygame.error:
+            pass
+        self.prev, self.cur = self.cur, c
+
+    def pressed(self, k): return self.cur.get(k) and not self.prev.get(k)
+
+class FakePad(Pad):
+    def __init__(self, n):
+        self.kind = "fake"; self.id = "fake%d" % n; self.prev = {}; self.cur = {}; self.t = 0
+        self.dir = random.choice([-1, 1])
+    def poll(self, keystate):
+        self.t += 1
+        if random.random() < 0.02: self.dir = random.choice([-1, 0, 1])
+        c = {"x": self.dir, "y": 0, "jump": random.random() < 0.08, "start": False, "back": False}
+        c["act"] = c["jump"]
+        self.prev, self.cur = self.cur, c
+
+# ---------------- level generation ----------------
+def gen_level(rng):
+    """Grid of solid tiles. Screen wraps horizontally. Guarantees each platform
+    row is within single-jump reach (3 tiles) of the row below."""
+    g = [[0] * COLS for _ in range(ROWS)]
+    # floor with up to 2 pits
+    for x in range(COLS): g[ROWS - 1][x] = 1
+    for _ in range(rng.randint(0, 2)):
+        px = rng.randint(3, COLS - 5); w = rng.randint(2, 3)
+        for x in range(px, px + w): g[ROWS - 1][x] = 0
+    # platform rows at y = 7, 4, (1 optional small)
+    for y in (ROWS - 4, ROWS - 7):
+        x = rng.randint(0, 2)
+        while x < COLS:
+            w = rng.randint(3, 6)
+            for i in range(x, min(COLS, x + w)): g[y][i] = 1
+            x += w + rng.randint(2, 4)
+    if rng.random() < 0.7:
+        x = rng.randint(4, COLS - 9); w = rng.randint(3, 5)
+        for i in range(x, x + w): g[1][i] = 1
+    return g
+
+def standable(g):
+    out = []
+    for y in range(1, ROWS):
+        for x in range(COLS):
+            if g[y][x] and not g[y - 1][x] and (y < 2 or not g[y - 2][x]):
+                out.append((x, y))
+    return out
+
+def pick_spawns(g, n, rng):
+    spots = standable(g); rng.shuffle(spots)
+    chosen = []
+    for min_d in (7, 5, 3, 0):
+        for s in spots:
+            if len(chosen) >= n: break
+            if all(min(abs(s[0] - c[0]), COLS - abs(s[0] - c[0])) + abs(s[1] - c[1]) >= min_d for c in chosen):
+                chosen.append(s)
+        if len(chosen) >= n: break
+    return [(x * TILE + 2, (y - 1) * TILE + 4) for x, y in chosen[:n]]
+
+# ---------------- entities ----------------
+class Particle:
+    __slots__ = ("x", "y", "vx", "vy", "life", "col", "g")
+    def __init__(s, x, y, vx, vy, life, col, g=0.15):
+        s.x, s.y, s.vx, s.vy, s.life, s.col, s.g = x, y, vx, vy, life, col, g
+
+class Player:
+    PW, PH = 12, 12
+    def __init__(s, idx, pad):
+        s.idx, s.pad = idx, pad
+        s.col, s.dark = PCOLORS[idx]
+        s.wins = 0; s.stomps = 0
+        s.spawn(0, 0)
+    def spawn(s, x, y):
+        s.x, s.y, s.vx, s.vy = float(x), float(y), 0.0, 0.0
+        s.alive = True; s.ground = False; s.jumps = 0; s.face = 1
+        s.speed_t = s.high_t = 0; s.shield = False; s.inv = 60
+        s.anim = 0.0; s.squash = 0.0; s.coyote = 0; s.buffer = 0
+    def rect(s): return pygame.Rect(int(s.x), int(s.y), s.PW, s.PH)
+
+POWER_TYPES = ["speed", "high", "shield"]
+PCOL = {"speed": (255, 140, 0), "high": (180, 90, 255), "shield": (80, 240, 240)}
+
+class Power:
+    def __init__(s, kind, x, y): s.kind, s.x, s.y, s.t = kind, x, y, 0
+
+# ---------------- game ----------------
+class Game:
+    def __init__(s, screen, test=False):
+        s.screen = screen; s.test = test
+        s.canvas = pygame.Surface((W, H))
+        s.font = pygame.font.Font(None, 14); s.big = pygame.font.Font(None, 32)
+        s.pads = {}; s.players = []
+        s.kb_keys = [(pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s, pygame.K_SPACE, pygame.K_RETURN),
+                     (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN, pygame.K_RCTRL, pygame.K_KP_ENTER)]
+        for k in s.kb_keys: s.add_pad(Pad("kb", keys=k))
+        s.state = "lobby"; s.t = 0; s.shake = 0; s.parts = []; s.menu_i = 0
+        s.quit_hold = 0; s.running = True; s.rng = random.Random()
+        s.level = gen_level(s.rng); s.powers = []; s.round_no = 0
+        s.stars = [(random.randrange(W), random.randrange(H), random.choice([1, 2])) for _ in range(40)]
+        s.tiles_surf = None; s.msg_t = 0; s.winner = None; s.paused_from = None
+
+    def add_pad(s, p):
+        s.pads[p.id] = p
+
+    def handle_device(s, ev):
+        if ev.type == pygame.JOYDEVICEADDED:
+            idx = ev.device_index; p = None
+            try:
+                from pygame._sdl2 import controller
+                if controller.is_controller(idx):
+                    p = Pad("gc", controller.Controller(idx))
+            except Exception:
+                p = None
+            if p is None:
+                p = Pad("js", pygame.joystick.Joystick(idx))
+            if p.kind == "gc":
+                p.id = "js%d" % pygame.joystick.Joystick(idx).get_instance_id()
+            s.add_pad(p)
+        elif ev.type == pygame.JOYDEVICEREMOVED:
+            pid = "js%d" % ev.instance_id
+            s.pads.pop(pid, None)
+            for pl in s.players:
+                if pl.pad.id == pid: pl.pad = FakeIdle()
+
+    # ----- level helpers -----
+    def solid(s, px, py):
+        tx = int(px // TILE) % COLS; ty = int(py // TILE)
+        if ty < 0 or ty >= ROWS: return False
+        return s.level[ty][tx] == 1
+
+    def new_round(s):
+        s.round_no += 1
+        for _ in range(50):
+            s.level = gen_level(s.rng)
+            sp = pick_spawns(s.level, len(s.players), s.rng)
+            if len(sp) == len(s.players): break
+        for p, (x, y) in zip(s.players, sp): p.spawn(x, y)
+        s.powers = []; s.power_timer = 240; s.tiles_surf = None
+        s.state = "ready"; s.t = 0; s.parts = []; s.winner = None
+
+    # ----- main update -----
+    def update(s):
+        ks = pygame.key.get_pressed()
+        for p in list(s.pads.values()): p.poll(ks)
+        for pl in s.players:
+            if pl.pad.id not in s.pads: pl.pad.poll(ks)
+        s.t += 1
+        # global quit combo: hold Back(Share)+Start ~1s
+        if any(p.cur.get("back") and p.cur.get("start") for p in s.pads.values()):
+            s.quit_hold += 1
+            if s.quit_hold > 60: s.running = False
+        else: s.quit_hold = 0
+        getattr(s, "up_" + s.state)()
+        # particles
+        for q in s.parts:
+            q.x += q.vx; q.y += q.vy; q.vy += q.g; q.life -= 1
+        s.parts = [q for q in s.parts if q.life > 0]
+        if s.shake > 0: s.shake -= 1
+
+    def burst(s, x, y, col, n=12, sp=2.0, life=30, g=0.15):
+        for _ in range(n):
+            a = random.uniform(0, 6.283); v = random.uniform(0.3, sp)
+            s.parts.append(Particle(x, y, math.cos(a) * v, math.sin(a) * v - 0.5, random.randint(life // 2, life), col, g))
+
+    def up_lobby(s):
+        joined = {pl.pad.id for pl in s.players}
+        for p in s.pads.values():
+            if p.id in joined:
+                if p.pressed("start") and len(s.players) >= 2: s.start_match(); return
+                if p.pressed("back"):
+                    s.players = [pl for pl in s.players if pl.pad is not p]
+                    for i, pl in enumerate(s.players): pl.idx = i; pl.col, pl.dark = PCOLORS[i]
+                continue
+            if (p.pressed("act") or p.pressed("start")) and len(s.players) < 4:
+                s.players.append(Player(len(s.players), p)); sfx("join")
+                s.burst(40 + 80 * (len(s.players) - 1), 100, PCOLORS[len(s.players) - 1][0], 20)
+        if ks_quit(): s.open_menu()
+
+    def start_match(s):
+        for pl in s.players: pl.wins = 0; pl.stomps = 0
+        s.round_no = 0; s.new_round()
+
+    def up_ready(s):
+        if s.t > 90: s.state = "play"; s.t = 0
+        s.common_pause()
+
+    def common_pause(s):
+        if ks_quit() or any(pl.pad.pressed("start") for pl in s.players): s.open_menu()
+
+    def open_menu(s):
+        s.paused_from = s.state; s.state = "menu"; s.menu_i = 0; sfx("select")
+
+    def up_menu(s):
+        opts = s.menu_opts()
+        for p in s.pads.values():
+            if p.cur.get("y") and not p.prev.get("y"):
+                s.menu_i = (s.menu_i + (1 if p.cur["y"] > 0 else -1)) % len(opts); sfx("select")
+            if p.pressed("act"):
+                o = opts[s.menu_i]
+                if o == "RESUME": s.state = s.paused_from
+                elif o == "BACK TO LOBBY": s.state = "lobby"; s.players = []
+                elif o == "QUIT GAME": s.running = False
+                return
+            if p.pressed("start"): s.state = s.paused_from; return
+
+    def menu_opts(s):
+        return ["RESUME", "BACK TO LOBBY", "QUIT GAME"]
+
+    def up_play(s):
+        s.common_pause()
+        if s.state != "play": return
+        for pl in s.players:
+            if pl.alive: s.move(pl)
+        s.check_stomps()
+        # powerups
+        s.power_timer -= 1
+        if s.power_timer <= 0 and len(s.powers) < 2:
+            spots = standable(s.level)
+            if spots:
+                x, y = s.rng.choice(spots)
+                s.powers.append(Power(s.rng.choice(POWER_TYPES), x * TILE + 8, y * TILE - 8))
+            s.power_timer = s.rng.randint(300, 500)
+        for pw in s.powers[:]:
+            pw.t += 1
+            for pl in s.players:
+                if pl.alive and pl.rect().colliderect(pygame.Rect(pw.x - 5, pw.y - 5, 10, 10)):
+                    if pw.kind == "speed": pl.speed_t = 600
+                    elif pw.kind == "high": pl.high_t = 600
+                    else: pl.shield = True
+                    sfx("power"); s.burst(pw.x, pw.y, PCOL[pw.kind], 16)
+                    s.powers.remove(pw); break
+        alive = [p for p in s.players if p.alive]
+        if len(alive) <= 1:
+            s.winner = alive[0] if alive else None
+            if s.winner: s.winner.wins += 1
+            s.state = "roundend"; s.t = 0; sfx("win")
+
+    def move(s, pl):
+        c = pl.pad.cur
+        spd = RUN * (1.5 if pl.speed_t > 0 else 1.0)
+        target = c.get("x", 0) * spd
+        pl.vx += (target - pl.vx) * (0.35 if pl.ground else 0.15)
+        if c.get("x"): pl.face = 1 if c["x"] > 0 else -1
+        if pl.pad.pressed("jump"): pl.buffer = 6
+        if pl.buffer > 0: pl.buffer -= 1
+        jv = JUMP_V * (1.25 if pl.high_t > 0 else 1.0)
+        if pl.buffer and (pl.ground or pl.coyote > 0):
+            pl.vy = jv; pl.jumps = 1; pl.buffer = 0; pl.coyote = 0; pl.squash = -0.4; sfx("jump")
+            s.burst(pl.x + 6, pl.y + 12, (220, 220, 220), 5, 1, 12, 0.05)
+        elif pl.buffer and pl.jumps < 2:
+            pl.vy = jv * 0.9; pl.jumps = 2; pl.buffer = 0; sfx("djump")
+            s.burst(pl.x + 6, pl.y + 12, pl.col, 8, 1.5, 15, 0.05)
+        if not c.get("jump") and pl.vy < -2: pl.vy += GRAV  # variable jump height
+        pl.vy = min(MAX_FALL, pl.vy + GRAV)
+        if pl.speed_t: pl.speed_t -= 1
+        if pl.high_t: pl.high_t -= 1
+        if pl.inv: pl.inv -= 1
+        # horizontal
+        pl.x += pl.vx
+        for yy in (pl.y + 1, pl.y + pl.PH - 1):
+            if pl.vx > 0 and s.solid(pl.x + pl.PW, yy): pl.x = (int(pl.x + pl.PW) // TILE) * TILE - pl.PW - 0.01; pl.vx = 0
+            elif pl.vx < 0 and s.solid(pl.x, yy): pl.x = (int(pl.x) // TILE + 1) * TILE; pl.vx = 0
+        pl.x %= W
+        # vertical
+        was = pl.ground; pl.ground = False
+        pl.y += pl.vy
+        xs = (pl.x + 1, pl.x + pl.PW - 1)
+        if pl.vy >= 0 and any(s.solid(x, pl.y + pl.PH) for x in xs):
+            pl.y = (int(pl.y + pl.PH) // TILE) * TILE - pl.PH
+            if not was and pl.vy > 2: pl.squash = 0.4; s.burst(pl.x + 6, pl.y + 12, (200, 200, 200), 4, 0.8, 10, 0.05)
+            pl.vy = 0; pl.ground = True; pl.jumps = 0
+        elif pl.vy < 0 and any(s.solid(x, pl.y) for x in xs):
+            pl.y = (int(pl.y) // TILE + 1) * TILE; pl.vy = 0
+        if was and not pl.ground and pl.vy >= 0: pl.coyote = 5; pl.jumps = 1
+        elif pl.coyote: pl.coyote -= 1
+        pl.squash *= 0.8
+        pl.anim += abs(pl.vx) * 0.15
+        if pl.y > ROWS * TILE + 10:
+            s.kill(pl, fell=True)
+
+    def kill(s, pl, fell=False):
+        pl.alive = False
+        s.shake = 14 if not fell else 8
+        sfx("fall" if fell else "stomp")
+        cx, cy = pl.x + 6, min(pl.y + 6, ROWS * TILE)
+        s.burst(cx, cy, pl.col, 30, 3.0, 45); s.burst(cx, cy, (255, 255, 255), 10, 2.0, 20)
+
+    def check_stomps(s):
+        al = [p for p in s.players if p.alive]
+        for a in al:
+            for b in al:
+                if a is b or not a.alive or not b.alive: continue
+                if a.vy > 0.5 and a.rect().colliderect(b.rect()) and a.y + a.PH - a.vy <= b.y + 4:
+                    a.vy = JUMP_V * 0.8; a.jumps = 1; a.squash = -0.4
+                    if b.inv: continue
+                    if b.shield:
+                        b.shield = False; b.inv = 45; sfx("shield"); s.shake = 5
+                        s.burst(b.x + 6, b.y + 6, PCOL["shield"], 20)
+                    else:
+                        a.stomps += 1; s.kill(b); sfx("boing")
+
+    def up_roundend(s):
+        if s.t > 60 and any(pl.pad.pressed("act") or pl.pad.pressed("start") for pl in s.players) or s.t > 480:
+            if any(p.wins >= WINS_TO_WIN for p in s.players):
+                s.state = "matchend"; s.t = 0
+            else: s.new_round()
+        if s.t % 20 == 0 and s.winner:
+            s.burst(random.randrange(40, 280), random.randrange(30, 90), s.winner.col, 20, 2.5, 50, 0.05)
+
+    def up_matchend(s):
+        if s.t % 10 == 0:
+            s.burst(random.randrange(W), random.randrange(H // 2), random.choice(PCOLORS)[0], 15, 2.5, 50, 0.05)
+        if s.t > 90 and any(pl.pad.pressed("act") or pl.pad.pressed("start") for pl in s.players):
+            s.start_match()
+        if s.t > 90 and any(pl.pad.pressed("back") for pl in s.players):
+            s.state = "lobby"; s.players = []
+
+    # ----- drawing -----
+    def text(s, t, x, y, col=(255, 255, 255), font=None, center=True, shadow=True):
+        f = font or s.font
+        img = f.render(t, False, col)
+        r = img.get_rect()
+        if center: r.center = (x, y)
+        else: r.topleft = (x, y)
+        if shadow:
+            sh = f.render(t, False, (0, 0, 0)); s.canvas.blit(sh, r.move(1, 1))
+        s.canvas.blit(img, r)
+
+    def draw_bg(s):
+        c = s.canvas
+        for i in range(0, H, 6):
+            k = i / H
+            pygame.draw.rect(c, (int(20 + 40 * k), int(15 + 20 * k), int(50 + 40 * k)), (0, i, W, 6))
+        for (x, y, z) in s.stars:
+            xx = int(x - s.t * 0.1 * z) % W
+            col = (120, 120, 170) if z == 1 else (200, 200, 255)
+            c.set_at((xx, y), col)
+        # distant hills
+        for i in range(0, W + 20, 20):
+            h = 30 + 12 * math.sin(i * 0.05 + s.round_no)
+            pygame.draw.rect(c, (35, 30, 70), (i, H - h - 20, 20, h + 20))
+
+    def build_tiles(s):
+        surf = pygame.Surface((W, ROWS * TILE), pygame.SRCALPHA)
+        hue = s.round_no % 4
+        base = [(110, 70, 40), (70, 90, 110), (90, 60, 100), (60, 100, 70)][hue]
+        top = [(80, 200, 80), (200, 230, 255), (230, 120, 200), (240, 200, 80)][hue]
+        for y in range(ROWS):
+            for x in range(COLS):
+                if not s.level[y][x]: continue
+                r = pygame.Rect(x * TILE, y * TILE, TILE, TILE)
+                pygame.draw.rect(surf, base, r)
+                dk = tuple(max(0, v - 30) for v in base)
+                for (dx, dy) in ((3, 6), (10, 10), (6, 13), (12, 4)):
+                    surf.set_at((r.x + dx, r.y + dy), dk)
+                pygame.draw.rect(surf, dk, r, 1)
+                if y == 0 or not s.level[y - 1][x]:
+                    pygame.draw.rect(surf, top, (r.x, r.y, TILE, 4))
+                    pygame.draw.line(surf, tuple(min(255, v + 40) for v in top), (r.x, r.y), (r.right - 1, r.y))
+        s.tiles_surf = surf
+
+    def draw_player(s, pl, x=None, y=None, scale=1):
+        c = s.canvas
+        px = int(pl.x) if x is None else x; py = int(pl.y) if y is None else y
+        if pl.inv and (pl.inv // 4) % 2 and s.state == "play": return
+        sq = getattr(pl, "squash", 0)
+        w = int(12 * (1 + sq) * scale); h = int(12 * (1 - sq) * scale)
+        bx = px + (12 * scale - w) // 2; by = py + 12 * scale - h
+        for ox in ((0, -W, W) if x is None else (0,)):
+            r = pygame.Rect(bx + ox, by, w, h)
+            pygame.draw.rect(c, pl.dark, r.inflate(2, 2), border_radius=3)
+            pygame.draw.rect(c, pl.col, r, border_radius=3)
+            pygame.draw.rect(c, tuple(min(255, v + 60) for v in pl.col), (r.x + 2, r.y + 1, max(1, w - 6), 2))
+            f = getattr(pl, "face", 1)
+            ex = r.centerx + f * 2 * scale
+            for d in (-2 * scale, 2 * scale):
+                pygame.draw.rect(c, (255, 255, 255), (ex + d - scale, r.y + 3 * scale, 2 * scale, 3 * scale))
+                pygame.draw.rect(c, (0, 0, 0), (ex + d + (f > 0) * scale - scale // 2, r.y + 4 * scale, scale, 2 * scale))
+            # feet
+            ph = int(getattr(pl, "anim", 0)) % 2 if getattr(pl, "ground", True) and abs(getattr(pl, "vx", 0)) > 0.3 else 0
+            pygame.draw.rect(c, pl.dark, (r.x + 1 + ph * scale, r.bottom, 3 * scale, 2 * scale))
+            pygame.draw.rect(c, pl.dark, (r.right - 4 - ph * scale, r.bottom, 3 * scale, 2 * scale))
+            if getattr(pl, "shield", False):
+                rad = 10 + int(math.sin(s.t * 0.2) * 1)
+                pygame.draw.circle(c, PCOL["shield"], r.center, rad, 1)
+            if getattr(pl, "speed_t", 0) and s.t % 3 == 0:
+                s.parts.append(Particle(r.centerx - f * 6, r.bottom - 2, -f * 0.5, 0, 10, PCOL["speed"], 0))
+            if getattr(pl, "high_t", 0) and s.t % 4 == 0:
+                s.parts.append(Particle(r.centerx, r.bottom, random.uniform(-0.3, 0.3), 0.5, 10, PCOL["high"], 0))
+
+    def draw(s):
+        c = s.canvas
+        s.draw_bg()
+        st = s.state if s.state != "menu" else s.paused_from
+        if st == "lobby": s.draw_lobby()
+        elif st in ("ready", "play", "roundend"):
+            if s.tiles_surf is None: s.build_tiles()
+            c.blit(s.tiles_surf, (0, 0))
+            for pw in s.powers:
+                yy = pw.y + math.sin(pw.t * 0.1) * 2
+                pygame.draw.circle(c, (255, 255, 255), (pw.x, int(yy)), 6)
+                pygame.draw.circle(c, PCOL[pw.kind], (pw.x, int(yy)), 5)
+                s.text({"speed": "S", "high": "J", "shield": "D"}[pw.kind], pw.x, int(yy) + 1, (255, 255, 255), shadow=False)
+            for pl in s.players:
+                if pl.alive: s.draw_player(pl)
+            s.draw_parts()
+            s.draw_hud()
+            if st == "ready":
+                n = 3 - s.t // 30
+                s.text(str(max(1, n)) if s.t < 90 else "GO!", W // 2, 70, (255, 255, 100), s.big)
+                s.text("ROUND %d" % s.round_no, W // 2, 45)
+            if st == "roundend": s.draw_scores()
+        elif st == "matchend": s.draw_matchend(); s.draw_parts()
+        if s.state == "lobby": s.draw_parts()
+        if s.state == "menu": s.draw_menu()
+        if s.quit_hold > 5:
+            pygame.draw.rect(c, (0, 0, 0), (W // 2 - 50, 4, 100, 12))
+            pygame.draw.rect(c, (230, 60, 60), (W // 2 - 49, 5, int(98 * s.quit_hold / 60), 10))
+            s.text("QUITTING...", W // 2, 10)
+        # present with shake
+        ox = random.randint(-s.shake, s.shake) // 3 if s.shake else 0
+        oy = random.randint(-s.shake, s.shake) // 3 if s.shake else 0
+        s.screen.fill((0, 0, 0))
+        s.screen.blit(c, (ox, oy))
+
+    def draw_parts(s):
+        for q in s.parts:
+            sz = 2 if q.life > 10 else 1
+            pygame.draw.rect(s.canvas, q.col, (int(q.x), int(q.y), sz, sz))
+
+    def draw_hud(s):
+        y0 = ROWS * TILE
+        pygame.draw.rect(s.canvas, (10, 10, 20), (0, y0, W, H - y0))
+        for i, pl in enumerate(s.players):
+            x = 6 + i * 80
+            pygame.draw.rect(s.canvas, pl.col if pl.alive else (70, 70, 70), (x, y0 + 4, 8, 8))
+            s.text("%s %d" % (PNAMES[pl.idx], pl.wins), x + 12, y0 + 3, (230, 230, 230), center=False, shadow=False)
+
+    def draw_lobby(s):
+        bob = int(math.sin(s.t * 0.08) * 3)
+        s.text("STOMPERS", W // 2, 28 + bob, (255, 220, 80), s.big)
+        s.text("v1.1", W - 14, 8, (120, 120, 160), shadow=False)
+        s.text("Jump on heads. Last one standing wins!", W // 2, 50, (200, 200, 255))
+        for i in range(4):
+            x = 40 + i * 80; y = 100
+            r = pygame.Rect(x - 34, 66, 68, 74)
+            pygame.draw.rect(s.canvas, (20, 20, 40), r, border_radius=4)
+            pygame.draw.rect(s.canvas, PCOLORS[i][1], r, 1, border_radius=4)
+            if i < len(s.players):
+                pl = s.players[i]
+                pl.face = 1; pl.anim = s.t * 0.1
+                s.draw_player(pl, x - 12, 84 + (int(abs(math.sin(s.t * 0.1 + i)) * -6)), 2)
+                s.text(PNAMES[i], x, 125, PCOLORS[i][0])
+            else:
+                if (s.t // 30) % 2: s.text("PRESS X", x, 98, (150, 150, 150))
+                s.text("TO JOIN", x, 112, (100, 100, 100))
+        msg = "OPTIONS: START   SHARE: LEAVE" if len(s.players) >= 2 else "Need 2+ players"
+        s.text(msg, W // 2, 152, (255, 255, 255))
+        s.text("First to %d wins. Hold SHARE+OPTIONS to quit." % WINS_TO_WIN, W // 2, 168, (140, 140, 170))
+
+    def draw_scores(s):
+        pygame.draw.rect(s.canvas, (0, 0, 0), (50, 30, 220, 120), border_radius=6)
+        pygame.draw.rect(s.canvas, (255, 255, 255), (50, 30, 220, 120), 1, border_radius=6)
+        if s.winner: s.text("%s WINS THE ROUND!" % PNAMES[s.winner.idx], W // 2, 44, s.winner.col)
+        else: s.text("DRAW!", W // 2, 44)
+        for i, pl in enumerate(s.players):
+            y = 64 + i * 18
+            s.draw_player(pl, 64, y - 6)
+            for k in range(WINS_TO_WIN):
+                col = (255, 220, 60) if k < pl.wins else (60, 60, 60)
+                pygame.draw.rect(s.canvas, col, (90 + k * 14, y - 4, 10, 8))
+            s.text("x%d" % pl.stomps, 175 + 8 * WINS_TO_WIN - 40, y, (180, 180, 180), center=False)
+        if s.t > 60 and (s.t // 30) % 2: s.text("Press X for next round", W // 2, 140, (200, 200, 200))
+
+    def draw_matchend(s):
+        w = max(s.players, key=lambda p: p.wins) if s.players else None
+        if w:
+            s.text("%s IS THE CHAMPION!" % PNAMES[w.idx], W // 2, 40, w.col, s.big)
+            s.draw_player(w, W // 2 - 18, 70 + int(abs(math.sin(s.t * 0.15)) * -10), 3)
+        s.text("X: rematch    SHARE: lobby", W // 2, 150)
+
+    def draw_menu(s):
+        pygame.draw.rect(s.canvas, (0, 0, 0), (90, 50, 140, 80), border_radius=6)
+        pygame.draw.rect(s.canvas, (255, 255, 255), (90, 50, 140, 80), 1, border_radius=6)
+        s.text("PAUSED", W // 2, 62, (255, 220, 80))
+        for i, o in enumerate(s.menu_opts()):
+            sel = i == s.menu_i
+            s.text(("> %s <" if sel else "%s") % o, W // 2, 82 + i * 16, (255, 255, 100) if sel else (180, 180, 180))
+
+class FakeIdle(Pad):
+    def __init__(s): s.kind = "idle"; s.id = "idle%d" % id(s); s.prev = {}; s.cur = {}
+    def poll(s, ks): s.prev, s.cur = s.cur, {}
+
+_ESC = [False]
+def ks_quit():
+    v = _ESC[0]; _ESC[0] = False; return v
+
+def main():
+    os.environ.setdefault("SDL_GAMECONTROLLER_ALLOW_BACKGROUND_EVENTS", "1")
+    init_audio()
+    pygame.init()
+    flags = pygame.SCALED | pygame.FULLSCREEN
+    if os.environ.get("STOMPERS_WINDOWED"): flags = pygame.SCALED
+    screen = pygame.display.set_mode((W, H), flags, vsync=1)
+    pygame.display.set_caption("STOMPERS")
+    pygame.mouse.set_visible(False)
+    try:
+        from pygame._sdl2 import controller; controller.init()
+    except Exception: pass
+    g = Game(screen)
+    clock = pygame.time.Clock()
+    while g.running:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT: g.running = False
+            elif ev.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED): g.handle_device(ev)
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE: _ESC[0] = True
+        g.update(); g.draw()
+        pygame.display.flip()
+        clock.tick(60)
+    pygame.quit()
+
+if __name__ == "__main__":
+    main()
