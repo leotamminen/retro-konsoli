@@ -497,9 +497,6 @@ def compose(name):
     g = (0.15 if name.startswith("boss") else 0.125) / rms
     return [math.tanh(v * g / 0.8) * 0.8 for v in buf]
 
-def render_track(name):
-    return render_classic(name) if name in TRACKS else compose(name)
-
 CACHE_VERSION = 5       # bump whenever a synthesis rule or the mixer format changes
 def music_cache_dir():
     return os.environ.get("TUONELA_MUSIC_CACHE") or os.path.join(os.path.dirname(settings_path()), "tuonela_music_v%d" % CACHE_VERSION)
@@ -649,22 +646,21 @@ def compose_louhi(name):
     for i in range(tail):buf[i]+=buf[total+i]
     buf=buf[:total];cache.clear();rms=(sum(v*v for v in buf[::5])/max(1,len(buf[::5])))**.5 or 1
     return [math.tanh(v*.12/rms/.8)*.8 for v in buf]
-_original_render=render_track
-def render_track(name):
-    if name in ("louhi","louhi2","louhi3"):return compose_louhi(name)
-    return _original_render(name)
 TRACK_ORDER+=("pohjola","louhi","louhi2","louhi3")
 for _n in ("louhi","louhi2","louhi3"):TRACKS.setdefault(_n,{});TRACKS[_n].setdefault("key",0);TRACKS[_n].setdefault("tempo",58+14*(int(_n[-1]) if _n[-1].isdigit() else 1));TRACKS[_n].setdefault("meter",8)
 TRACKS["pohjola"]={"key":0,"tempo":42,"meter":8}
-_orig_louhi_render=render_track
+def _pohjola_track():
+    _result=[]
+    for i in range(RATE*17):
+        v=math.sin(2*math.pi*midi(36)*i/RATE)*.014+math.sin(2*math.pi*midi(43)*i/RATE)*.012
+        _result.append(v*(.4+.6*math.sin(math.pi*i/(RATE*17))))
+    return _result
 def render_track(name):
-    if name=="pohjola":
-        _result=[]
-        for i in range(RATE*17):
-            v=math.sin(2*math.pi*midi(36)*i/RATE)*.014+math.sin(2*math.pi*midi(43)*i/RATE)*.012
-            _result.append(v*(.4+.6*math.sin(math.pi*i/(RATE*17))))
-        return _result
-    return _orig_louhi_render(name)
+    if name=="pohjola": return _pohjola_track()
+    if name in ("louhi","louhi2","louhi3"): return compose_louhi(name)
+    water = globals().get("PTEMPO")
+    if water and name in water: return compose_water(name)
+    return render_classic(name) if name in TRACKS else compose(name)
 MusicPlayer.LIKELY["pohjola"]=["louhi"]
 MUSIC=MusicPlayer()
 MUSIC_SCHEME={"title":True}

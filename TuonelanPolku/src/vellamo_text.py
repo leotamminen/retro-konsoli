@@ -27,9 +27,8 @@ def draw_reveal(s):
     pygame.draw.arc(c,(39,91,111),(48,132,83,16),.2,2.9,1)
     pygame.draw.arc(c,(35,77,97),(145,143,129,11),.2,2.9,1)
     s.rich(tr('hint_next'),160,171,(180,210,216),s.tiny)
-GameUI.dr_aino_reveal=draw_reveal
 end_stats_fn=lambda sv:tr('end_stats',fmt_time(sv['time']),sv['deaths'],1+sum(sv['stats'].values()))
-def draw_true(s):
+def draw_true_ending(s):
     c=s.canvas;c.fill((7,10,19));pg=s.true_page
     if pg<3:
         for i,line in enumerate(wrap(s.font,tr('real_%d'%pg),260)):s.text(line,160,70+i*15-len(wrap(s.font,tr('real_%d'%pg),260))*5,(220,222,209))
@@ -37,10 +36,8 @@ def draw_true(s):
         s.text(tr('real_title'),160,42,(245,221,158),s.font);s.text(end_stats_fn(s.save),160,86,(245,221,158),s.font)
     if pg==4:s.menu_box([tr('vel_choice'),tr('vel_stay')],s.menu_i.get('vel_offer',0),cy=150,minw=170)
     else:s.rich(tr('hint_next'),160,156,(150,170,180),s.tiny)
-GameUI.dr_true_ending=draw_true
-def draw_vel_end(s):
+def draw_vellamo_ending(s):
     s.canvas.fill((3,20,34));s.text(tr('boss_vellamo'),160,13,(169,230,217),s.mid)
     for i,line in enumerate(wrap(s.font,tr('vel_ending'),270)):s.text(line,160,43+i*12,(200,238,224))
     s.text(end_stats_fn(s.save),160,126,(243,211,150),s.font);s.rich(tr('hint_next'),160,163,(167,207,204),s.tiny)
-GameUI.dr_vellamo_ending=draw_vel_end
 for b,nm,en in [('b10','Aallon ranta','Shimmering Shore'),('b11','Syvänteen tulentekopaikka','Depths Bonfire'),('b12','Temppelin tulipaikka','Cathedral Bonfire'),('b13','Vapauden ranta','Shore of Freedom')]:_t('bf_'+b,nm,en)

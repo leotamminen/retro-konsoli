@@ -1,11 +1,13 @@
 """Test harness: loads the built game into a namespace and offers a headless Game."""
 import os, sys, tempfile, shutil
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy"); os.environ.setdefault("SDL_AUDIODRIVER", "dummy"); os.environ["TUONELA_NO_MUSIC"] = "1"
+import json
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 TMP = tempfile.mkdtemp(prefix="tp_test_")
 os.environ["TUONELA_SETTINGS"] = os.path.join(TMP, "set.json"); os.environ["TUONELA_SAVE"] = os.path.join(TMP, "save.json")
-BUILD = os.environ.get("TP_FILE") or os.path.join(ROOT, "TuonelanPolku1.3.4.pygame")
+VERSION = json.load(open(os.path.join(ROOT, "version.json"), encoding="utf-8"))["version"]
+BUILD = os.environ.get("TP_FILE") or os.path.join(ROOT, "TuonelanPolku%s.pygame" % VERSION)
 def load():
     G = {"__name__": "tp"}
     exec(compile(open(BUILD).read(), BUILD, "exec"), G)

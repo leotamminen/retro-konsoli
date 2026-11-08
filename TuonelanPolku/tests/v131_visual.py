@@ -11,7 +11,7 @@ for key in ('joukahainen','ahti','aino','vellamo'):
     ok(sp.get_size()==(192,160),key+' new cached sheet size')
     ok(sp.get_bounding_rect().w>0,key+' visible pixels')
 for a in ('ranta','syvanne','katedraali'):
- bg=G['sky_for'](a)
+ bg=G['sky_surface'](a)
  ok(bg.get_at((10,5))!=bg.get_at((10,155)),a+' actual cached gradient')
  ok(bg.get_at((10,20))!=(0,0,0,255),a+' water pixels not erased')
  g=new_game();sv=G['new_save']('warrior');sv.update(vellamo_unlocked=True,vellamo_visited=True,bonfire={'ranta':'b10','syvanne':'b11','katedraali':'b12'}[a]);start(g,save=sv)

@@ -1,27 +1,36 @@
-# Module map
+# Source modules
 
-`build.py` concatenates `pNN_*.py` in numeric order. The number is the load order. The name after it is the responsibility.
+`build.py` loads these files in the order below. The order is the list `ORDER` in `build.py`, not a filename number. A module may use names defined by modules above it. The build fails if a file is missing, extra, out of order, or if it rebinds a class method from outside the class.
 
-| File | Responsibility |
+| File | Owns |
 |---|---|
-| p0_font | Bitmap font |
-| p1_core | Constants, settings, saves |
-| p2_audio | SFX and lazy music |
-| p3_world | Reads the embedded base map |
-| p4_phys | Movement and collisions |
-| p5_art, p6_env, p7_bossart | Drawing |
-| p8_ent, p9_ai | Entities and enemy brains |
-| p10_boss | Hiisi, Turso, Tytti, Louhi |
-| p11_player | Input pads and the player |
-| p12_game | Session, camera, combat |
-| p13_ui | Menus, cutscenes, HUD |
-| p14_text | Base translations |
-| p15_main | Game object and `main()`, not the call |
-| p16_vellamo_core | Applies the Vellamo map |
-| p18, p20, p21, p22 | Vellamo art, music, bosses, enemies |
-| p40_release | Credits, New Game+, test-weapon text |
-| p99_entry | The only `main()` call |
+| font.py | Bitmap font |
+| core.py | Constants, settings, saves |
+| audio.py | Sound effects and music, one `render_track` |
+| world.py | Base world from the embedded `maps/world.json` |
+| physics.py | Movement and hazards |
+| art.py | Character and prop drawing |
+| scenery.py | Sky, parallax, fog, including the water realms |
+| boss_art.py | Hiisi, Turso, Tytti, Louhi sprites |
+| entities.py | Projectiles, zones, enemies |
+| enemies.py | Enemy brains, including the water mobs |
+| bosses.py | Hiisi, Turso, Tytti, Louhi |
+| player.py | Pads and the player |
+| session.py | Session, camera, combat, gates, New Game+ |
+| ui.py | Menus, cutscenes, HUD, map screen |
+| text.py | Base Finnish and English strings |
+| app.py | The `Game` object and `main()`, not the call |
+| vellamo_world.py | Vellamo columns from `maps/vellamo.json` |
+| vellamo_art.py | Water-boss sprites |
+| vellamo_music.py | Water-realm tracks |
+| vellamo_bosses.py | Joukahainen, Ahti, Aino, Vellamo |
+| vellamo_mobs.py | Lampi, rapu, poltto, merikala, kutri brains |
+| vellamo_text.py | Realm strings and the ending drawings |
+| map_chart.py | Explored-region map image |
+| map_draw.py | Map screen drawing |
+| vellamo_scenery.py | Water sky, reeds, mist |
+| vellamo_strings.py | Bonfire names and the gate sign |
+| release_text.py | Credits and test-weapon strings |
+| entry.py | The only `if __name__ == "__main__"` call |
 
-These still patch earlier classes instead of living inside them: `p23_v13_game.py`, `p25_v13_ui.py`, `p26_v13_core_hooks.py`, `p29_v13_transitions.py`, `p30` through `p35`. They run before `main()`, so the patches are active on the first frame. Moving them into the original classes would reorder a lot of working behavior, so they stay as a named layer for now.
-
-`version.json` is the only version string. The build embeds it once. Source modules do not assign `VERSION`.
+`version.json` is the only version. Source modules do not assign `VERSION`. Do not edit a generated `TuonelanPolku*.pygame` by hand.

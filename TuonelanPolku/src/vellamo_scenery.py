@@ -18,10 +18,7 @@ def vellamo_bg(name):
         _WL_BG[name]=sf
     return _WL_BG[name]
 _WL_BG={'blank_fog':mk(1,1)}
-_sky13=sky_surface
-def sky_for(ar):return vellamo_bg(ar) if ar in ('ranta','syvanne','katedraali') else _sky13(ar)
-sky_surface=sky_for
-def par_for(ar):
+def water_layers(ar):
     if ar not in _PAR13:
         sh=mk(480,180)
         if ar=='ranta':
@@ -59,13 +56,11 @@ def par_for(ar):
                 pygame.draw.rect(sh,(91,150,145),(xx-1,yy-1,1,1))
         ps=mk(480,180);ps.blit(sh,(0,0));_PAR13[ar]=[(ps,.28,0)]
     return _PAR13[ar]
-_PAR13={};layers_for=par_for
+_PAR13={}
 
 # Generic fog uses a source-alpha fill; a translucent ellipse without its
 # fill would be completely opaque. Clear low-alpha water mist at the seam.
-_water_fog=fog_surface
-def fog_for(ar):
-    if ar not in ('ranta','syvanne','katedraali'):return _water_fog(ar)
+def water_fog(ar):
     key='mist_'+ar
     if key not in _WL_BG:
         sf=mk(640,64);sf.fill((0,0,0,0))
@@ -75,21 +70,3 @@ def fog_for(ar):
             pygame.draw.arc(sf,(53,105,120,17),(x-34,y-3,76,19),3.3,6.08,2)
         _WL_BG[key]=sf
     return _WL_BG[key]
-fog_surface=fog_for
-# Preserve 1.3 chunking and fog draw order; only opaque water fog is skipped.
-def _water_world(s,c,t):
-    global fog_surface
-    area=area_at(int((s.cam[0]+W//2)//TILE))
-    if area not in ('ranta','syvanne','katedraali'):return _world(s,c,t)
-    blank=_WL_BG['blank_fog']
-    # Original half-transparent tile strips can inherit opaque black alpha.
-    # The established color-key clear is cheap, cached, and preserves allocation.
-    for ch in range(int(s.cam[0])//320,min((COLS*TILE-1)//320,(int(s.cam[0])+W-1)//320)+1):
-        strip=s.chunk(ch)
-        if strip.get_colorkey() is None:strip.set_colorkey((0,0,0))
-    cache=fog_surface
-    try:
-        fog_surface=lambda ar:blank
-        return _world(s,c,t)
-    finally:fog_surface=cache
-GameCore.draw_world=_water_world

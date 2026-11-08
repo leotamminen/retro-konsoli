@@ -29,12 +29,6 @@ def C(root,k):
     if key not in _VC:_VC[key]=_lead_note('choir',midi(root-(12 if k else 0)),4.5,root)
     return _VC[key]
 _V_bd=tone(93,40,.28,.45,'sine');_V_shaker=tone(7000,4000,.045,.15,'noise')
-_prev13=render_track
-def render_track(name):
-    if name in PTEMPO:
-
-        return compose_water(name)
-    return _prev13(name)
 TRACK_ORDER+=tuple(PTEMPO)
 for name,tempo in PTEMPO.items():TRACKS[name]={'key':1,'tempo':tempo,'meter':8}
 MusicPlayer.LIKELY.update(ranta=['joukahainen'],syvanne=['ahti'],katedraali=['aino'],joukahainen=[],ahti=[],aino=['vellamo'],vellamo=['vellamo2'],vellamo2=[])

@@ -137,6 +137,19 @@ class Hiisi(Boss):
         for k, x in enumerate(xs):
             s.g.zones.append(Zone(x, s.gy, 20, 150, tele(48) + k * 9, 6, 30 * D()["dmg"], "rock", 2.8))
         for _ in range(30): yield
+    def draw(s, surf, cx, cy):
+        if s.dead and s.dt > 150: return
+        pose = s.anim if s.anim in ("idle", "walk", "slam_w", "slam", "sweep_w", "sweep", "charge_w", "charge", "roar", "stagger", "hurt", "die", "rock") else "idle"
+        if s.dead: pose = "die"
+        if s.anim == "walk" and abs(s.vx) < 0.05: pose = "idle"
+        spr = hiisi_frame(pose, (s.t // 6) % 6 if pose in ("walk", "charge") else (s.t // 12) % 2 * 8, s.face < 0, s.flash > 0, s.phase >= 2)
+        w, h = spr.get_size(); x = int(s.x - cx); y = int(s.y - cy)
+        if s.dead: spr = spr.copy(); spr.set_alpha(max(0, 255 - max(0, s.dt - 80) * 4))
+        surf.blit(spr, (x - w // 2, y - h + 3))
+        if s.warn > 0 and s.warn_t < 12:
+            pygame.draw.rect(surf, (255, 60, 50), (x - 1, y - 66, 3, 5)); pygame.draw.rect(surf, (255, 60, 50), (x - 1, y - 60, 3, 2))
+        if s.warn > 0 and s.warn <= 5:
+            g2 = spr.copy(); g2.fill((90, 60, 10, 0), special_flags=pygame.BLEND_RGB_ADD); surf.blit(g2, (x - w // 2, y - h + 3))
 
 class Turso(Boss):
     def __init__(s, g, x, y):
@@ -324,21 +337,6 @@ class Tytti(Boss):
         s.y = min(s.gy - 2, s.y + 0.3)
 
 BOSS_CLS = {"hiisi": Hiisi, "turso": Turso, "tytti": Tytti}
-
-def _hiisi_draw(s, surf, cx, cy):
-    if s.dead and s.dt > 150: return
-    pose = s.anim if s.anim in ("idle", "walk", "slam_w", "slam", "sweep_w", "sweep", "charge_w", "charge", "roar", "stagger", "hurt", "die", "rock") else "idle"
-    if s.dead: pose = "die"
-    if s.anim == "walk" and abs(s.vx) < 0.05: pose = "idle"
-    spr = hiisi_frame(pose, (s.t // 6) % 6 if pose in ("walk", "charge") else (s.t // 12) % 2 * 8, s.face < 0, s.flash > 0, s.phase >= 2)
-    w, h = spr.get_size(); x = int(s.x - cx); y = int(s.y - cy)
-    if s.dead: spr = spr.copy(); spr.set_alpha(max(0, 255 - max(0, s.dt - 80) * 4))
-    surf.blit(spr, (x - w // 2, y - h + 3))
-    if s.warn > 0 and s.warn_t < 12:
-        pygame.draw.rect(surf, (255, 60, 50), (x - 1, y - 66, 3, 5)); pygame.draw.rect(surf, (255, 60, 50), (x - 1, y - 60, 3, 2))
-    if s.warn > 0 and s.warn <= 5:
-        g2 = spr.copy(); g2.fill((90, 60, 10, 0), special_flags=pygame.BLEND_RGB_ADD); surf.blit(g2, (x - w // 2, y - h + 3))
-Hiisi.draw = _hiisi_draw
 
 class Louhi(Boss):
     """Final secret encounter. Large floating eagle; scripted lanes leave fair escape space."""

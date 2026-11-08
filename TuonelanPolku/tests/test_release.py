@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Run the built 1.3.4 file as __main__ with a bounded real update/draw loop."""
+"""Run the built release as __main__ with a bounded real update/draw loop."""
 import ctypes, hashlib, json, os, sys, time, traceback
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REAL = ROOT / "TuonelanPolku1.3.4.pygame"
+VERSION = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))["version"]
+REAL = ROOT / ("TuonelanPolku%s.pygame" % VERSION)
 OUT = Path("/tmp/tp134")
 OUT.mkdir(exist_ok=True)
 os.environ.update(
@@ -33,16 +34,16 @@ def check(name, ok, detail=None):
 def PROBE(g):
     import pygame
     ns = sys._getframe(1).f_globals
-    check("version on first frame", ns["VERSION"] == "1.3.4")
+    check("version on first frame", ns["VERSION"] == VERSION)
     check("expanded map before the loop", ns["COLS"] == 860 and len(ns["GRID"][0]) == 860)
-    check("entrypoint is the module call", sys._getframe(2).f_lineno > 6000)
+    check("entrypoint is the module call", sys._getframe(2).f_lineno > ns["main"].__code__.co_firstlineno)
     texts = []
     orig = g.text
     def wrap(t, x, y, *a, **k):
         texts.append(str(t)); return orig(t, x, y, *a, **k)
     g.text = wrap; g.draw(); g.text = orig
     pygame.image.save(g.canvas, str(OUT / "title.png"))
-    check("title draws VERSION 1.3.4", "VERSION 1.3.4" in texts)
+    check("title draws the version", ("VERSION " + VERSION) in texts)
     check("test weapon defaults off", ns["SETTINGS"].get("test_weapon") is False)
 
     sdl = ctypes.CDLL("/home/ubuntu/.local/lib/python3.12/site-packages/pygame.libs/libSDL2-2-1667c208.0.so.0.2800.4")

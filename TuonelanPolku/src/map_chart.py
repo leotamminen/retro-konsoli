@@ -1,5 +1,5 @@
 """Explored-cell map: unseen realm is neither drawn nor implied. Small area surfaces not full map."""
-def map13(s):
+def explored_region_map(s):
     if getattr(s,'mapimg',None):return
     rows=[]
     for nm,a,b in AREAS:
@@ -16,4 +16,3 @@ def map13(s):
                 elif v==LADDER:surf.fill((170,120,70),(x,ty,2,1))
         rows.append((nm,a,b,surf,sil))
     s.mapimg=rows
-GameUI.build_map=map13

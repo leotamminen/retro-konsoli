@@ -1,7 +1,7 @@
 def map_y(s,i):
     return 15+i*18 if s.save and s.save.get('vellamo_unlocked') and s.save.get('vellamo_visited') else 17+i*39
 
-def dr_map_fog(s):
+def draw_region_map(s):
     s.build_map();c=s.canvas;s.msgs.clear()
     if s.save is not None:s.draw_play_scene()
     c.blit(s.dimmer,(0,0));c.fill((10,8,14),(0,0,W,H))
@@ -36,4 +36,3 @@ def dr_map_fog(s):
                 col=(255,255,255) if p.idx==0 else P2_TINT[p.cls];c.fill(col,(x+int((tx-a)*2)-1,y+int(p.y/TILE*surf.get_height()/ROWS)-2,3,3))
         if known:s.text(tr('area_'+nm),x+3,y-5,(220,215,200),s.tiny,'l')
     s.text(tr('map_legend'),W//2,H-6,(170,170,180),s.tiny)
-GameUI.dr_map=dr_map_fog

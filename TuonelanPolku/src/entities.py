@@ -34,12 +34,20 @@ class Atk:
         return (x + ox if face > 0 else x - ox - w, y + oy, w, h)
 
 class Proj:
-    def __init__(s, kind, x, y, vx, vy, dmg, w=6, h=6, enemy=True, life=240, grav=0.0, tags=(), homing=0.0, pid=0, pierce=0, poise=10, col=(255, 160, 80), hp=1):
+    def __init__(s, kind, x, y, vx, vy, dmg, w=6, h=6, enemy=True, life=240, grav=0.0, tags=(), homing=0.0, pid=0, pierce=0, poise=10, col=(255, 160, 80), hp=1, curve=0):
         s.kind = kind; s.x = x; s.y = y; s.vx = vx; s.vy = vy; s.dmg = dmg; s.w = w; s.h = h; s.enemy = enemy; s.life = life
         s.grav = grav; s.tags = set(tags); s.homing = homing; s.pid = pid; s.pierce = pierce; s.poise = poise; s.col = col
-        s.hit = set(); s.dead = False; s.t = 0; s.hp = hp; s.kbx = 1.5
+        s.hit = set(); s.dead = False; s.t = 0; s.hp = hp; s.kbx = 1.5; s.curve = curve; s.wd = None
     def rect(s): return (s.x - s.w / 2, s.y - s.h / 2, s.w, s.h)
     def update(s, g):
+        s.wd = g.wd
+        if s.kind in ("runic", "verse", "memory", "thornwave", "bubble", "swell"):
+            s.t += 1; s.life -= 1
+            if s.life <= 0: s.dead = True; return
+            s.x += s.vx; s.y += s.vy; s.vy += s.curve
+            if s.kind == "bubble": s.vy -= .012
+            if s.kind not in ("thornwave",) and g.wd.solid(int(s.x // TILE), int(s.y // TILE)): s.dead = True
+            return
         s.t += 1; s.life -= 1
         if s.life <= 0: s.dead = True; return
         if s.homing and s.enemy:
@@ -59,7 +67,17 @@ class Proj:
         if s.kind in ("orb", "bolt", "spit") and s.t % 3 == 0:
             g.parts.add(s.x, s.y, random.uniform(-.2, .2), random.uniform(-.2, .2), 14, s.col, 1)
     def draw(s, surf, cx, cy):
-        x = int(s.x - cx); y = int(s.y - cy)
+        x = int(s.x - cx); y = int(s.y - cy); co = s.col
+        if s.kind in ("runic", "memory"):
+            pygame.draw.rect(surf, co, (x - 2, y - 6, 4, 12), 1); pygame.draw.line(surf, co, (x - 5, y + 3), (x + 5, y - 3), 1); return
+        if s.kind == "thornwave":
+            pygame.draw.polygon(surf, co, [(x - 4, y + 7), (x, y - 8), (x + 4, y + 7)]); return
+        if s.kind == "bubble":
+            pygame.draw.circle(surf, co, (x, y), 6, 1); pygame.draw.circle(surf, (223, 250, 234), (x + 2, y - 2), 1); return
+        if s.kind == "verse":
+            pygame.draw.arc(surf, co, (x - 8, y - 10, 15, 21), -math.pi / 2, math.pi, 1); pygame.draw.circle(surf, co, (x - 4, y + 8), 3); return
+        if s.kind == "swell":
+            pygame.draw.arc(surf, co, (x - 13, y - 22, 27, 40), 0, math.pi, 3); pygame.draw.arc(surf, (173, 233, 227), (x - 6, y - 13, 13, 23), 0, math.pi, 1); return
         if s.kind == "arrow":
             a = math.atan2(s.vy, s.vx); ex = int(math.cos(a) * 6); ey = int(math.sin(a) * 6)
             pygame.draw.line(surf, (200, 180, 140), (x - ex, y - ey), (x + ex, y + ey), 1); surf.set_at((x + ex, y + ey), (240, 240, 240))
@@ -87,7 +105,9 @@ class Zone:
         s.kb = kb; s.tags = set(tags)
     @property
     def active(s): return s.t >= s.delay
-    def rect(s): return (s.x - s.w / 2, s.y - s.h, s.w, s.h)
+    def rect(s):
+        if s.style == "bog" and s.active: return (s.x - 24, s.y - 20, 48, 5)
+        return (s.x - s.w / 2, s.y - s.h, s.w, s.h)
     def update(s, g):
         s.t += 1
         if s.t == s.delay:
@@ -95,6 +115,18 @@ class Zone:
             elif s.style == "geyser": sfx("splash", 0.9); g.parts.burst(s.x, s.y, (150, 200, 255), 12, 1.6, 22, 1, 0.05, 2.0)
             elif s.style == "beam": sfx("ice", 0.8)
         if s.t >= s.delay + s.life: s.dead = True
+        if s.style == "bog" and s.active:
+            for p in g.players:
+                if abs(p.x - s.x) < 24 and abs(p.y - s.y) < 32:
+                    bo = getattr(p, "bog", None)
+                    if bo != s:
+                        p.bog = s; p.bog_t = 90; p.vx = 0; p.y = s.y; p.vy = 0
+                    elif p.pad.pressed("jump"):
+                        p.bog_t = 0; p.bog = None; p.y -= 18; p.vy = JUMP_V; p.inv = max(p.inv, 80); s.dead = True
+                    else:
+                        p.bog_t -= 1
+                        if s.t % 90 == 0: p.take_hit(12 * D()["dmg"], s.x, 0, tags=("magic",))
+                        if p.bog_t <= 0: p.bog = None; s.dead = True
     def draw(s, surf, cx, cy):
         x = int(s.x - cx); y = int(s.y - cy); w = int(s.w); h = int(s.h)
         if not s.active:
@@ -284,6 +316,14 @@ class Enemy(Body):
         fl = s.flash > 0
         return enemy_frame(s.kind, a, t, s.face < 0, fl)
     def draw(s, surf, cx, cy):
+        if isinstance(s, WaterBoss):
+            spr = newboss_frame(s.key, getattr(s, "vb", "idle"), max(1, min(3, round(s.phase))), s.t)
+            if s.face > 0:
+                fk = ("flip", s.key, getattr(s, "vb", "idle"), max(1, min(3, round(s.phase))), s.t % 4)
+                if fk not in _BSPR: _BSPR[fk] = pygame.transform.flip(spr, True, False)
+                spr = _BSPR[fk]
+            surf.blit(spr, (int(s.x - cx - spr.get_width() // 2), int(s.y - cy - spr.get_height())))
+            return
         if s.hidden: return
         spr = s.sprite(); w, h = spr.get_size()
         x = int(s.x - cx); y = int(s.y - cy)

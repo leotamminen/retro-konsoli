@@ -2,7 +2,7 @@
 # TUONELAN POLKU (Path of Tuonela) - light 2D soulslike for Batocera (pygame 2.6.1).
 # Single file, no assets, no numpy. Copy to /userdata/roms/pygame/
 # Settings and save game are written next to this file.
-import os, sys, math, random, array, json, threading, time
+import os, sys, math, random, array, json, threading, time, gc
 import pygame
 
 W, H = 320, 180
@@ -163,6 +163,7 @@ def sanitize_save(d, valid_bonfires=None, valid_ids=None):
     s['aino_freed'] = bool(d.get('aino_freed', False)) and "aino" in s["bosses"]
     s['vellamo_done'] = bool(d.get('vellamo_done', False)) and "vellamo" in s["bosses"]
     if s["vellamo_done"]: s["ng_ready"] = True
+    sv_clear = s.pop("vellamo_clear", None)
     return s
 
 def load_save(path=None, valid_bonfires=None):

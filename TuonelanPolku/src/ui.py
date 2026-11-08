@@ -201,22 +201,31 @@ class GameUI:
         s.open_title()
     # ---------- title ----------
     def up_title(s):
-        r = s.menu_in(); items = s.title_items(); n = len(items)
-        i = s.sel("title", n, r); key = items[i][0]
-        if r["ok"]:
-            sfx("confirm", 0.7)
-            if key == "cont": s.begin_session(s.title_save)
-            elif key == "new":
-                if s.title_save is not None: s.confirm_i = 1; s.menu_i["confirm"] = 1; s.state_name = "confirm"   # default = No
-                else: s.new_game_flow()
-            elif key == "settings": s.open_settings("title")
-            elif key == "quit": s.running = False
-        if r["back"]: s.menu_i["title"] = n - 1
+        result = s.menu_in(); items = s.title_items(); index = s.sel("title", len(items), result); key = items[index][0]
+        if result["back"]: s.menu_i["title"] = len(items) - 1
+        if not result["ok"]: return
+        sfx("confirm", .7); s._title_commit_device = getattr(s, "last_accept_pad", None)
+        if key == "vellamo":
+            committing_pad = s.last_pad
+            s.start_session(s.title_save, committing_pad); s.enter_vellamo()
+        elif key == "cont": s.begin_session(s.title_save)
+        elif key == "ng": s.begin_ng(s.title_save)
+        elif key == "info": s.state_name = "info"; s.info_t = 0
+        elif key == "new":
+            if s.title_save: s.confirm_i = 1; s.menu_i["confirm"] = 1; s.state_name = "confirm"
+            else: s.new_game_flow()
+        elif key == "settings": s.open_settings("title")
+        elif key == "quit": s.running = False
     def title_items(s):
-        it = []
-        if s.title_save is not None: it.append(("cont", tr("m_continue")))
-        it += [("new", tr("m_new")), ("settings", tr("m_settings")), ("quit", tr("m_quit"))]
-        return it
+        items = []
+        save = s.title_save
+        if save is not None:
+            items.append(("cont", tr("m_continue")))
+            if save.get("vellamo_unlocked") and save.get("done") and not save.get("vellamo_visited"):
+                items.append(("vellamo", tr("vel_choice")))
+            if save.get("ng_ready"):
+                items.append(("ng", tr("m_ng")))
+        return items + [("new", tr("m_new")), ("info", tr("m_info")), ("settings", tr("m_settings")), ("quit", tr("m_quit"))]
     def dr_title(s):
         c = s.canvas; t = s.t_ui
         s.draw_title_bg(c, t)
@@ -512,24 +521,7 @@ class GameUI:
         s.rich(tr("hint_levelup"), W // 2, 152, (190, 190, 200), s.tiny)
     # ---------- map ----------
     def build_map(s):
-        if getattr(s, "mapimg", None): return
-        s.mapimg = []
-        cols = {"forest": ((70, 80, 62), (110, 150, 80)), "swamp": ((70, 78, 56), (140, 160, 80)), "river": ((84, 84, 120), (150, 190, 220)), "pohjola":((36,40,57),(83,105,150))}
-        for (nm, a, b) in AREAS:
-            surf = pygame.Surface(((b - a) * 2, ROWS)); surf.fill((14, 12, 20)); base, top = cols[nm]
-            for tx in range(a, b):
-                for ty in range(ROWS):
-                    v = GRID[ty][tx]; x = (tx - a) * 2
-                    if v == SOLID: surf.fill(top if GRID[ty - 1][tx] != SOLID else base, (x, ty, 2, 1))
-                    elif v == PLAT: surf.fill((150, 110, 70), (x, ty, 2, 1))
-                    elif v == WATER: surf.fill((50, 90, 170), (x, ty, 2, 1))
-                    elif v == THORN: surf.fill((180, 60, 70), (x, ty, 2, 1))
-                    elif v == LADDER: surf.fill((170, 120, 70), (x + 0, ty, 1, 1))
-            sil = pygame.Surface(surf.get_size()); sil.fill((14, 12, 20))      # "unknown" silhouette version
-            for tx in range(a, b):
-                for ty in range(ROWS):
-                    if GRID[ty][tx] in (SOLID, WATER): sil.fill((34, 32, 42) if GRID[ty][tx] == SOLID else (28, 30, 46), ((tx - a) * 2, ty, 2, 1))
-            s.mapimg.append((nm, a, b, surf, sil))
+        explored_region_map(s)
     def up_map(s):
         r = s.menu_in()
         if r["back"] or r["ok"] or any(pd.pressed("back") for pd in s.pads.values()): s.state_name = s.map_from
@@ -546,38 +538,7 @@ class GameUI:
                 if c2 not in vis: front.add(c2)
         return vis, front
     def dr_map(s):
-        s.build_map(); c = s.canvas;s.msgs.clear()
-        if s.save is not None: s.draw_play_scene()
-        c.blit(s.dimmer, (0, 0)); c.fill((10, 8, 14), (0, 0, W, H))
-        s.text(tr("m_map"), W // 2, 7, (255, 225, 150), s.font)
-        vis, front = s.map_known()
-        for i, (nm, a, b, surf, sil) in enumerate(s.mapimg):
-            y = map_y(s,i) if len(s.mapimg)>4 else (17+i*39); x = (W - surf.get_width()) // 2
-            known = any(a <= cx * MAP_CW + MAP_CW - 1 and cx * MAP_CW < b for (cx, cy) in vis)
-            pygame.draw.rect(c, (10,8,14) if not known else (18,16,24), (x - 1, y - 1, surf.get_width() + 2, ROWS + 2))
-            for cx in range(a // MAP_CW, (b - 1) // MAP_CW + 1):
-                for cy in range((ROWS + MAP_CH - 1) // MAP_CH):
-                    src = surf if (cx, cy) in vis else (sil if (cx, cy) in front else None)
-                    if src is None: continue
-                    t0 = max(a, cx * MAP_CW); t1 = min(b, cx * MAP_CW + MAP_CW)
-                    r = pygame.Rect((t0 - a) * 2, cy * MAP_CH, (t1 - t0) * 2, min(MAP_CH, ROWS - cy * MAP_CH))
-                    c.blit(src, (x + r.x, y + r.y), r)
-            for k, ar in ARENAS.items():          # boss rooms stay secret until seen
-                if a <= ar["x0"] < b:
-                    if ("arena:" + k) not in s.mapseen:
-                        c.fill((10, 8, 14), (x + (ar["x0"] + 1 - a) * 2, y + ar["y0"], (ar["x1"] - ar["x0"] - 1) * 2, ar["ground"] - ar["y0"] + 2)); continue
-                    done = k in s.save["bosses"]; mx = x + (ar["x0"] + 10 - a) * 2; my = y + ar["y0"] + 6
-                    pygame.draw.rect(c, (90, 90, 100) if done else (220, 60, 60), (mx - 2, my - 2, 5, 5), 1); c.fill((90, 90, 100) if done else (220, 60, 60), (mx, my, 1, 1))
-            for bid, tx in BONFIRES.items():
-                if a <= tx < b and bid in s.save["seen"]:
-                    by = floor_row(tx, BF_START[bid]); c.fill((255, 170, 70), (x + (tx - a) * 2 - 1, y + by - 3, 4, 3)); c.fill((255, 235, 150), (x + (tx - a) * 2, y + by - 3, 2, 1))
-            for p in s.players:
-                tx = p.x / TILE
-                if a <= tx < b and (s.t_ui // 15) % 2 == 0:
-                    col = (255, 255, 255) if p.idx == 0 else P2_TINT[p.cls]; c.fill(col, (x + int((tx - a) * 2) - 1, y + int(p.y / TILE) - 2, 3, 3))
-            if known: s.text(tr("area_" + nm), x + 3, y - 5, (220, 215, 200), s.tiny, "l")
-        s.text(tr("map_legend"), W // 2, H - 6, (170, 170, 180), s.tiny)
-    # ---------- settings ----------
+        draw_region_map(s)
     def setting_label(s, k):
         return tr("set_" + k)
     def setting_value(s, k):
@@ -704,12 +665,42 @@ class GameUI:
         if s.true_t>120:s.state_name="true_ending";s.true_page=0;s.true_t=0
     def dr_true(s):s.canvas.fill((0,0,0))
     def up_true_ending(s):
-        r=s.menu_in();s.true_t+=1
-        if r["ok"] and s.true_t>30:s.true_page+=1;s.true_t=0
-        if s.true_page>=4:s.back_to_title()
+        result = s.menu_in(); s.true_t += 1
+        if s.true_page >= 4:
+            index = s.sel("vel_offer", 2, result)
+            if result["ok"]:
+                if index == 0: s.save["vellamo_unlocked"] = True; s.save_game(); s.enter_vellamo()
+                else: s.back_to_title()
+        elif (result["ok"] or result["any"]) and s.true_t > 30:
+            s.true_page += 1; s.true_t = 0
     def dr_true_ending(s):
-        c=s.canvas;c.fill((7,10,19));pg=s.true_page
-        if pg<3:
-            lines=wrap(s.font,tr("real_%d"%pg),260)
-            for i,line in enumerate(lines):s.text(line,160,70+i*15-len(lines)*5,(220,222,209))
-        else:s.text(tr("real_title"),160,52,(245,221,158),s.big);s.text(tr("end_thanks"),160,110,(205,220,222));s.rich(tr("hint_next"),160,156,(150,170,180),s.tiny)
+        draw_true_ending(s)
+    def up_aino_reveal(s):
+        result = s.menu_in(); s.reveal_t += 1
+        if (result["ok"] and s.reveal_t > 1) or s.reveal_t > 240:
+            s.state_name = "play"; s.start_boss("vellamo")
+    def dr_aino_reveal(s):
+        draw_reveal(s)
+    def up_vellamo_ending(s):
+        result = s.menu_in()
+        if result["ok"] or result["back"] or s.vel_end_t > 500: s.back_to_title()
+    def dr_vellamo_ending(s):
+        draw_vellamo_ending(s)
+    def up_vellamo_arrival(s):
+        s.state_name = "play"; pygame.event.clear(); s.prewarm_vellamo(); gc.collect()
+    def dr_vellamo_arrival(s):
+        s.canvas.fill((4, 15, 26)); s.text(tr("area_ranta"), 160, 53, (158, 220, 200), s.big)
+        pygame.draw.line(s.canvas, (99, 190, 173), (36, 143), (284, 143), 1)
+    def up_info(s):
+        r = s.menu_in()
+        s.info_t = getattr(s, "info_t", 0) + 1
+        if (r["ok"] or r["back"]) and s.info_t > 8: s.state_name = "title"
+    def dr_info(s):
+        c = s.canvas
+        s.draw_title_bg(c, s.t_ui)
+        s.panel(16, 18, 288, 146)
+        s.text(tr("m_info"), W // 2, 30, (255, 225, 150), s.mid)
+        lines_ = (tr("info_game"), tr("info_version", VERSION), tr("info_author"), tr("info_note"))
+        for i, line in enumerate(lines_):
+            s.text(line, W // 2, 52 + i * 16, (220, 220, 210), s.font)
+        s.text(tr("info_back"), W // 2, 148, (170, 170, 180), s.tiny)

@@ -82,7 +82,8 @@ def move_body(wd, b, ghost_ok=False):
     return b.on_ground
 
 def hazard_at(wd, b):
-    """Thorn or water touching the feet area."""
+    """Thorn or water touching the feet area. New-realm water at row 19 is traversable."""
+    if b.x>=486*TILE and wd.tile(int(b.x//TILE), 19)==WATER: return False
     hw = b.w / 2.0
     for tx in range(int((b.x - hw + 1) // TILE), int((b.x + hw - 1) // TILE) + 1):
         for ty in (int((b.y - 3) // TILE), int((b.y - b.h * 0.5) // TILE)):

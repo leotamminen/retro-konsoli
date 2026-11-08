@@ -134,6 +134,8 @@ CK = (255, 0, 255)
 def _layer(w, h, draw):
     s = pygame.Surface((w, h)); s.fill(CK); s.set_colorkey(CK); draw(s, random.Random(w * 7 + h)); return s
 def layers_for(area):
+    if area in ("ranta", "syvanne", "katedraali"):
+        return water_layers(area)
     if area in _LAYERS: return _LAYERS[area]
     sk = PAL[area]["sky"][1]
     if area == "forest":
@@ -218,6 +220,8 @@ def layers_for(area):
 
 _SKY = {}
 def sky_surface(area):
+    if area in ("ranta", "syvanne", "katedraali"):
+        return vellamo_bg(area)
     if area not in _SKY:
         s = pygame.Surface((W, H)); a, b = PAL[area]["sky"]
         for y in range(H):
@@ -259,6 +263,8 @@ def vignette():
     return _VIG
 _FOGS = {}
 def fog_surface(area):
+    if area in ("ranta", "syvanne", "katedraali"):
+        return water_fog(area)
     if area not in _FOGS:
         s = mk(640, 64); r = random.Random(8); c = PAL[area]["fog"]
         for _ in range(26):

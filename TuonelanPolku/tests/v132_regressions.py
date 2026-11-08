@@ -5,7 +5,7 @@ FAIL=[]
 def req(cond,name):
  print(('PASS ' if cond else 'FAIL ')+name)
  if not cond:FAIL.append(name)
-req(G['VERSION']=='1.3.4','correct version')
+req(G['VERSION']==VERSION,'correct version')
 # Draw and operate every bonfire, including real P2 interactions and old saves.
 for bid in G['BONFIRES']:
  for who in (0,1):

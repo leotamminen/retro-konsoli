@@ -6,6 +6,8 @@ def _los_walk_chase(e, t, until):
 
 class Mob(Enemy):
     def brain(s):
+        if s.kind in ("poltto", "merikala", "kutri", "lampi", "rapu"):
+            return aquatic_brain(s)
         return getattr(s, "b_" + s.kind)()
     # ---- grounded melee ----
     def b_peikko(s):
@@ -184,3 +186,22 @@ class Mob(Enemy):
         return r
     def hurt_rect(s):
         return (s.x - s.w / 2, s.y - s.h, s.w, s.h)
+    def draw(s, surf, cx, cy):
+        if s.kind not in ("poltto", "merikala", "kutri", "lampi", "rapu"):
+            return Enemy.draw(s, surf, cx, cy)
+        x = int(s.x - cx); y = int(s.y - s.h / 2 - cy)
+        if s.kind == "lampi":
+            pygame.draw.circle(surf, (186, 236, 210), (x, y), 6); pygame.draw.circle(surf, (255, 255, 220), (x, y - 1), 2)
+            pygame.draw.line(surf, (120, 190, 170), (x, y + 4), (x, y + 12), 1)
+        elif s.kind == "rapu":
+            pygame.draw.ellipse(surf, (168, 92, 64), (x - 10, y - 6, 20, 10))
+            pygame.draw.line(surf, (120, 60, 40), (x - 8, y), (x - 14, y - 6), 2); pygame.draw.line(surf, (120, 60, 40), (x + 8, y), (x + 14, y - 6), 2)
+            pygame.draw.circle(surf, (40, 24, 16), (x - 3, y - 2), 1); pygame.draw.circle(surf, (40, 24, 16), (x + 3, y - 2), 1)
+        elif s.kind == "poltto":
+            pygame.draw.circle(surf, (34, 108, 121), (x, y), 8); pygame.draw.circle(surf, (113, 216, 183), (x, y), 5)
+            for i in range(5): pygame.draw.line(surf, (22, 90, 120), (x - 8 + i * 4, y), (x - 8 + i * 4, y - 10), 2)
+        elif s.kind == "merikala":
+            pygame.draw.ellipse(surf, (41, 141, 164), (x - 14, y - 8, 25, 16)); pygame.draw.polygon(surf, (96, 186, 169), [(x - 10, y), (x - 25, y - 8), (x - 25, y + 8)]); pygame.draw.circle(surf, (211, 232, 179), (x + 7, y - 2), 2)
+        else:
+            pygame.draw.arc(surf, (146, 171, 219), (x - 9, y - 10, 18, 34), 0, 6.28, 2)
+            for i in range(3): pygame.draw.line(surf, (68, 141, 138), (x - 7 + i * 7, y), (x - 11 + i * 7, y + 14), 1)

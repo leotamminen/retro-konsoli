@@ -1,5 +1,9 @@
 
 # ---------------- game core: session, world state, combat resolution, camera, world drawing ----------------
+_VELLAMO_GATE=(454*16+8, 320)
+def _gate_unlocked(s):
+    sv=s.save or {}
+    return "louhi" in sv.get("bosses", []) and not sv.get("vellamo_visited")
 MAP_CW, MAP_CH = 20, 11          # fog-of-war cell size in tiles
 def map_cell(tx, ty): return "%d,%d" % (int(tx) // MAP_CW, max(0, int(ty)) // MAP_CH)
 BF_START = {"b0": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0, "b5": 0, "b6": 10, "b7": 37, "b8": 2, "b9": 0}
@@ -32,12 +36,14 @@ class GameCore:
         return surf
     def warm_all(s):
         center=int(s.cam[0])//320
-        for c in range(max(0,center-3),min((COLS-1)//20,center+4)+1):s.chunk(c)
+        for c in range(max(0,center-1),min((COLS-1)//20,center+1)+1):s.chunk(c)
     def warm_chunks(s):
-        center=int(s.cam[0])//320
         if s.frames%4:return
+        if getattr(s,"chunk_frame",-1)==s.frames:return
+        center=int(s.cam[0])//320
         for c in sorted(range(max(0,center-3),min((COLS-1)//20,center+4)+1),key=lambda c:abs(c-center)):
-            if (c,s.CHUNK_REV[0]) not in GameCore.CHUNK_CACHE:s.chunk(c);break
+            if (c,s.CHUNK_REV[0]) not in GameCore.CHUNK_CACHE:
+                s.chunk_frame=s.frames; s.chunk(c); return
     def enter_pohjola(s,save):
         MUSIC.request("pohjola")
         for ar in ("pohjola",):sky_surface(ar);layers_for(ar);fog_surface(ar)
@@ -75,6 +81,11 @@ class GameCore:
         s.spawn_enemies(); s.snap_cam(); s.area = area_at(int(p.x // TILE)); s.area_popup = (s.area, 0)
         s.state_name = "play"; s.init_fireflies()
         s.warm_all();s.enter_t=0
+        s.aino_glimpse=None; s.tide=0; s.vel_end_t=0; s.current=0
+        if save and "louhi" in save.get("bosses", []): s.wd.set_open("d_vellamo", True)
+        if save and save.get("p2") and len(s.players)==1:
+            other=physical_pad(s, p1pad)
+            if other is not None: s.add_p2(save["p2"]["cls"], other)
     @property
     def coop(s): return len(s.players) > 1
     def save_game(s):
@@ -154,10 +165,26 @@ class GameCore:
             if p.alive() and not (a["x0"] + 1 <= p.x / TILE < a["x1"]):
                 sx, sy = s.find_safe_xy((a["x0"] + 4) * TILE, gy, face=1)
                 p.spawn(sx, sy); p.inv = 30; p.safe = (sx, sy)
+        if key in ("joukahainen","ahti","aino","vellamo"):
+            for p in s.players: p.inv=180
+        center=(a["x0"]-1)*16//320
+        for ci in (center-1, center, center+1):
+            if 0<=ci<((COLS-1)//20+1): s.chunk(ci)
+        if key in ("joukahainen","ahti","aino","vellamo"):
+            for tx, _dir in ((a["x0"], -1), (a["x0"]+4, 1)):
+                if tx>=486: s.chunk(tx//20); break
         s.snap_cam()
         MUSIC.request(a["track"]); b.shown_bar = 0.0
     def on_boss_dead(s, b):
         k = b.key; sv = s.save
+        if k in ("joukahainen", "ahti"):
+            if k not in sv["bosses"]: sv["bosses"].append(k)
+            s.wd.set_open("d_%s_in" % k, True)
+            s.felled = (k, 0)
+            sv["bonfire"] = "b11" if k == "joukahainen" else "b12"
+            s.save_game()
+            gc.collect()
+            return
         if k not in sv["bosses"]: sv["bosses"].append(k)
         a = ARENAS[k]
         if a["door_out"]: s.wd.set_open("d_%s_out" % k, True)
@@ -172,10 +199,68 @@ class GameCore:
             sv["louhi_unlocked"]=True
             s.ending_t=1;s.save_game()
         elif k=="louhi":
-            sv["done"]=True;s.save_game();s.ending_t=0;s.end_t=0;s.true_end_delay=1
+            sv["done"]=True; sv["vellamo_unlocked"]=True
+            s.wd.set_open("d_vellamo", True)
+            s.save_game(); s.ending_t=0; s.end_t=0; s.true_end_delay=1
+            s.msg(tr("vel_sign"), (160,240,210))
+        elif k=="vellamo":
+            sv["aino_freed"]=True; sv["vellamo_done"]=True; sv["ng_ready"]=True
+            s.save_game(); s.vel_end_t=1
         else: s.save_game()
+        gc.collect()
     def on_kill(s, e):
         s.kills += 1
+    def enter_vellamo(s):
+        sv=s.save; sv["vellamo_unlocked"]=True; sv["vellamo_visited"]=True; sv["bonfire"]="b10"
+        if "b10" not in sv["seen"]: sv["seen"].append("b10")
+        s.save_game(); s.poht_t=0; s.mapimg=None
+        s.start_session(sv, s.p_pad[0] if s.p_pad[0] else s.kb)
+        s.state_name="vellamo_arrival"
+        MUSIC.request("ranta"); s.prewarm_vellamo()
+    def prewarm_vellamo(s):
+        for ar in ("ranta","syvanne","katedraali"):
+            sky_surface(ar); layers_for(ar); fog_surface(ar)
+        for ph in (1,2,3):
+            for k in ("joukahainen","ahti","aino","vellamo"):
+                for po in ("idle","windup","attack","roar","fish","maiden","reveal"):
+                    newboss_frame(k, po, ph, 0)
+        for ch in range(24, 28): s.chunk(ch)
+    def start_aino_reveal(s):
+        s.reset_boss(); s.state_name="aino_reveal"; s.reveal_t=0
+        for p in s.players: p.spawn((646+p.idx*6)*TILE, 320); p.refill(); p.inv=180
+        s.save["bonfire"]="b13"
+        if "b13" not in s.save["seen"]: s.save["seen"].append("b13")
+        s.save_game(); gc.collect()
+    def start_vellamo_ending(s):
+        gc.collect(); s.state_name="vellamo_ending"; s.vel_end_t=0
+        s.save["vellamo_done"]=True; s.save["ng_ready"]=True; s.save_game()
+    def water_level(s):
+        return 228-s.tide if s.arena=="ahti" else 0
+    def begin_ng(s, save):
+        if not save or not save.get("ng_ready"):
+            return
+        sv = new_save(save["cls"])
+        sv["stats"] = {k: int(save["stats"].get(k, 0)) for k in STAT_KEYS}
+        sv["souls"] = int(save.get("souls", 0))
+        sv["taken"] = list(save.get("taken") or [])
+        sv["p2"] = save.get("p2")
+        sv["level"] = 1 + sum(sv["stats"].values())
+        sv["deaths"] = int(save.get("deaths", 0))
+        sv["time"] = int(save.get("time", 0))
+        sv["ng"] = int(save.get("ng") or 0) + 1
+        sv["ng_ready"] = True
+        sv["bosses"] = []
+        sv["opened"] = []
+        sv["seen"] = ["b0"]
+        sv["bonfire"] = "b0"
+        sv["mapseen"] = []
+        sv["louhi_unlocked"] = False
+        sv["vellamo_unlocked"] = False
+        sv["vellamo_visited"] = False
+        sv["vellamo_done"] = False
+        sv["aino_freed"] = False
+        sv["done"] = False
+        s.begin_session(sv)
     # ---------- helpers used by entities ----------
     def nearest_player(s, x, y):
         best = None; bd = 1e9
@@ -333,6 +418,9 @@ class GameCore:
         return first
     def interact(s, p, near):
         kind, ident = near
+        if kind == "vellamo_gate":
+            if _gate_unlocked(s): sfx("confirm", 0.7); s.enter_vellamo()
+            return
         if kind == "bonfire":
             first = s.rest_at(p, ident)
             if first: s.banner = [tr("bonfire_lit"), 0]
@@ -363,6 +451,7 @@ class GameCore:
             k = lv["opens"]
             done = (not s.wd.state[k]) if DYN[k]["code"] == SOLID else s.wd.state[k]
             if not done: out.append((lv["tx"] * TILE + 8, lv["ty"] * TILE, "lever", lid))
+        if _gate_unlocked(s): out.append((_VELLAMO_GATE[0], _VELLAMO_GATE[1], "vellamo_gate", "gate"))
         return out
     def nearby_for(s, p, its):
         best = None; bd = 1e9
@@ -465,6 +554,8 @@ class GameCore:
         for p in s.players:
             if getattr(p, "gain_t", 0) > 0: p.gain_t -= 1
     def hazard(s, p):
+        if p.x>=486*TILE:
+            p.vy=min(p.vy, .8); return
         if p.inv > 0 and p.state == "roll": pass
         dmg = max(12.0, p.maxhp * 0.15)
         sfx("splash", 0.7); s.parts.burst(p.x, p.y - 4, (150, 200, 255), 10, 1.4, 20, 1, 0.1, 1.5)
@@ -536,6 +627,11 @@ class GameCore:
                 if b.dt > 160 and s.arena:
                     s.arena = None; MUSIC.request(s.area)
                 if b.dt > 240: s.boss = None
+        if isinstance(s.boss, WaterBoss):
+            k=s.boss.key; ph=s.boss.phase
+            suffix="3" if ph>=3 else "2" if ph>=1.5 else ""
+            MUSIC.request(k+suffix if k+suffix in TRACK_ORDER else k)
+            if k=="ahti": s.tide=int(math.sin(s.frames*.015)*10)+(22 if ph>=2 else 0)
     def update_items(s):
         if s.dying: return
         taken = s.save["taken"]
@@ -574,8 +670,21 @@ class GameCore:
         s.dark_target = max(0.0, min(1.0, (dy - 31 * TILE) / (4 * TILE)))
         if s.arena: s.dark_target = 0.35
         if s.area=="pohjola":s.dark_target=.67
-        if s.area=="pohjola":s.dark_target=.67
         s.dark += (s.dark_target - s.dark) * 0.04
+        if s.area in ("ranta","syvanne","katedraali"):
+            tx=int(s.players[0].x//TILE); s.save["vellamo_visited"]=True
+            if not s.aino_glimpse and not s.boss:
+                if 493<=tx<499: s.aino_glimpse=(510*TILE, 0.)
+                elif 548<=tx<554: s.aino_glimpse=(562*TILE, 0.)
+                elif 602<=tx<609: s.aino_glimpse=(615*TILE, 0.)
+            if s.aino_glimpse:
+                x,t=s.aino_glimpse
+                if t>28: x+=1.5
+                s.aino_glimpse=(x, t+1) if t<150 else None
+            if s.boss and s.boss.key=="vellamo" and s.boss.dead: s.vel_end_t+=1
+            if s.vel_end_t>130: s.start_vellamo_ending()
+        if s.frames==3 and _gate_unlocked(s) and s.area=="pohjola":
+            s.msg(tr("vel_sign"), (160,240,210))
     # ---------- camera ----------
     def cam_goal(s):
         alive = [p for p in s.players if p.alive()] or s.players
@@ -642,6 +751,11 @@ class GameCore:
     def draw_world(s, c, t):
         wd = s.wd; cx = int(s.cam[0]); cy = int(s.cam[1]); area = area_at(int((cx + W // 2) // TILE))
         pal = PAL[area]
+        water = area in ("ranta", "syvanne", "katedraali")
+        if water:
+            for ch in range(cx // 320, min((COLS * TILE - 1) // 320, (cx + W - 1) // 320) + 1):
+                strip = s.chunk(ch)
+                if strip.get_colorkey() is None: strip.set_colorkey((0, 0, 0))
         c.blit(sky_surface(area), (0, 0))
         for (lay, f, yo) in layers_for(area):
             lw, lh = lay.get_size()
@@ -694,8 +808,14 @@ class GameCore:
         for pr in s.projs:
             if -20<pr.x-cx<W+20 and -20<pr.y-cy<H+30:pr.draw(c,cx,cy)
         s.parts.draw(c, cx, cy)
-        # fog
-        fs = fog_surface(area)
+        # fog: water realms use a clear mist, not the opaque land fog
+        if water:
+            fs = getattr(GameCore, "_water_blank", None)
+            if fs is None:
+                fs = pygame.Surface((1, 1), pygame.SRCALPHA)
+                GameCore._water_blank = fs
+        else:
+            fs = fog_surface(area)
         for (yy, f, sp) in ((H - 74, 1.25, 0.25), (H - 40, 1.6, -0.35)):
             fx = -int(cx * f + t * sp) % 640
             c.blit(fs, (fx - 640, yy)); c.blit(fs, (fx, yy))
@@ -711,8 +831,26 @@ class GameCore:
                 col = (int(fc[0] * a), int(fc[1] * a), int(fc[2] * a)); c.fill(col, (int(f[0]) - 5, int(f[1]) - 5, 2, 2))
                 if a > 0.8: c.fill((255, 255, 230), (int(f[0]) - 5, int(f[1]) - 5, 1, 1))
         s._pcx = s.cam[0]; s._pcy = s.cam[1]
+        if getattr(s, "aino_glimpse", None):
+            aino_glimpse(c, int(s.aino_glimpse[0]-s.cam[0]), t)
+        if area in ("ranta","syvanne","katedraali"):
+            tide=getattr(s, "tide", 0)
+            for x in (-12,77,198,281):
+                y=124+int(math.sin(x*.07+t*.04)*3)+tide//2
+                pygame.draw.arc(c,(65,127,146),(x,y,18,6),.15,2.9,1)
+        if _gate_unlocked(s) and area=="pohjola":
+            x=int(_VELLAMO_GATE[0]-s.cam[0]); y=int(_VELLAMO_GATE[1]-s.cam[1])
+            pygame.draw.rect(c,(35,116,133),(x-8,y-43,16,43),1)
+            pygame.draw.rect(c,(67,182,184),(x-5,y-40,10,37),1)
+            for k in range(3): pygame.draw.circle(c,(124,224,205),(x-6+k*6,y-35-((t//5+k*7)%25)),1)
+            s.text(tr("vel_entrance"), x, y-51, (164,234,205), s.tiny)
     def draw_light(s, c, t, cx, cy, pal):
-
+        water = s.area in ("ranta", "syvanne", "katedraali")
+        saved_ff = None
+        if water:
+            saved_ff = s.ffs
+            s.ffs = []
+            pal = dict(pal, ambient={"ranta": (184, 208, 214), "syvanne": (187, 209, 231), "katedraali": (184, 214, 201)}[s.area])
         amb = pal["ambient"]; dk = s.dark
         night = (62, 68, 86)
         base = tuple(int(amb[i] + (night[i] - amb[i]) * dk) for i in range(3))
@@ -747,6 +885,15 @@ class GameCore:
             if k not in s.save["taken"]: lit(tx * TILE + 8 - cx, ty * TILE - 6 - cy, 18, (90, 80, 40))
         c.blit(lm, (0, 0), special_flags=pygame.BLEND_MULT)
         c.blit(vignette(), (0, 0), special_flags=pygame.BLEND_MULT)
+        if water:
+            s.ffs = saved_ff
+            fc = {"ranta": (99, 220, 161), "syvanne": (128, 200, 198), "katedraali": (172, 228, 198)}[s.area]
+            for i in range(4):
+                xx = (i * 83 + t // 17) % 317; yy = 111 + (i * 19) % 30
+                w = 5 + int(3 * math.sin(t * .017 + i))
+                pygame.draw.arc(c, (30, 78, 94), (xx, yy, w, 5), .4, 2.7, 1)
+            for f in s.ffs[:30]:
+                if f[0] > cx - 10 and f[0] < cx + 330: c.fill(fc, (int(f[0] - cx), int(f[1] - cy), 2, 2))
     def draw_bonfire(s, c, x, y, lit, t):
         x = int(x); y = int(y)
         pygame.draw.rect(c, (36, 34, 40), (x - 8, y - 3, 16, 3)); pygame.draw.rect(c, (70, 68, 78), (x - 8, y - 3, 16, 1))

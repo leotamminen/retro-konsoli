@@ -347,6 +347,14 @@ class Player(Body):
     # --- states ---
     def phys(s, fric=0.82, grav=True):
         g = s.g
+        if isinstance(g, GameCore) and g.arena=="ahti":
+            water=228-g.tide
+            s.in_water=s.y-PH_>water
+            if s.in_water:
+                s.vy=min(2.8, s.vy-.045); s.vx+=math.sin(g.frames*.04)*.025
+                if s.vy<0: s.vy*=.94
+        else:
+            s.in_water=False
         if grav: s.vy = min(MAX_FALL, s.vy + GRAV)
         if s.on_ground: s.vx *= fric
         move_body(g.wd, s)
@@ -429,6 +437,12 @@ class Player(Body):
             g.projs.append(Proj("bolt", s.x + s.face * 8, s.y - 13, s.face * sp, 0, a["dmg"] * s.spellm, 6, 5, enemy=False, life=70, tags=(), pid=s.idx, poise=7, col=(150, 255, 230)))
         else:
             g.projs.append(Proj("orb", s.x + s.face * 8, s.y - 13, s.face * 2.4, 0, a["dmg"] * s.spellm, 11, 11, enemy=False, life=110, tags=("heavy",), pid=s.idx, pierce=2, poise=22, col=(110, 255, 210)))
+        if s.pad.held("up"):
+            for z in g.projs[-1:]:
+                speed=math.hypot(z.vx, z.vy)
+                horizontal=(1 if s.pad.held("right") else -1 if s.pad.held("left") else 0)
+                if horizontal: z.vx=horizontal*speed/math.sqrt(2); z.vy=-speed/math.sqrt(2)
+                else: z.vx=0.0; z.vy=-speed
         sfx(a.get("snd", "bolt"), 0.8); g.parts.burst(s.x + s.face * 9, s.y - 13, (150, 255, 230), 4, 0.8, 10)
     def nova(s, a):
         g = s.g
@@ -448,6 +462,11 @@ class Player(Body):
             vx = math.cos(ang) * speed * s.face; vyy = math.sin(ang) * speed + vy
             g.projs.append(Proj("parrow", s.x + s.face * 8, s.y - 12, vx, vyy, dmg, 8, 4, enemy=False, life=70, pid=s.idx, poise=poise,
                                 pierce=2 if charge else 0, tags=("heavy",) if charge else (), col=(240, 230, 190)))
+        if s.pad.held("up"):
+            for z in g.projs[-n:]:
+                horizontal=(1 if s.pad.held("right") else -1 if s.pad.held("left") else 0)
+                if horizontal: z.vx=horizontal*speed/math.sqrt(2); z.vy=-speed/math.sqrt(2)
+                else: z.vx=0.0; z.vy=-speed
         sfx("arrow", 0.8)
     def upd_roll(s):
         g = s.g; r = ROLL[s.cls]; t = s.st_t; s.st_t += 1
