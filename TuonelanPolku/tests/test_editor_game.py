@@ -63,6 +63,15 @@ def body(tmp):
     doc.add_spawn("peikko", 14, 0)
     ok, errors = doc.save(maps / "world.json")
     req(ok and errors == [], "edited map saved " + " ".join(errors))
+    vdoc = MapDoc.load(maps / "vellamo.json")
+    for row in range(16, 20):
+        vdoc.paint(492, row, 1)
+    for row in range(20, 25):
+        vdoc.erase(494, row)
+    vdoc.resize_arena("joukahainen", "bottom", 2)
+    vdoc.move_arena("joukahainen", 6, 0)
+    ok, errors = vdoc.save(maps / "vellamo.json")
+    req(ok and not errors, "sculpted vellamo saved " + " ".join(errors))
     preview = tmp / "TuonelanPolku-esikatselu.pygame"
     built = subprocess.run(
         [sys.executable, str(ROOT / "build.py"), "--maps", str(maps), str(preview)],
@@ -104,6 +113,27 @@ def body(tmp):
         sy = int(28 * 16 - game.cam[1]) + 1
         pixel = game.canvas.get_at((sx, sy))
         seen["screen"] = pixel[0] > 100 and 0 <= sx < ns["W"] and 0 <= sy < ns["H"]
+        arena = ns["ARENAS"]["joukahainen"]
+        door = ns["DYN"]["d_joukahainen_in"]["tiles"]
+        seen["arena"] = arena["x0"] == 562 and arena["ground"] == 22 and door[0][0] == 562 and door[-1][1] == 21
+        world = ns["World"]()
+        hill = ns["Body"](492 * 16 + 8, 8 * 16, 8, 16)
+        hill.vy = 8
+        for _ in range(40):
+            ns["move_body"](world, hill)
+        seen["hill"] = hill.on_ground and abs(hill.y - 16 * 16) < 1
+        pit = ns["Body"](494 * 16 + 8, 8 * 16, 8, 16)
+        pit.vy = 8
+        for _ in range(60):
+            ns["move_body"](world, pit)
+        seen["pit"] = pit.on_ground and pit.y > 24 * 16
+        game.arena = "joukahainen"
+        _tx, ty = game.cam_goal()
+        seen["camera"] = abs(ty - (22 * 16 + 8 - ns["H"])) < 1
+        game.start_boss("joukahainen")
+        span = arena["x1"] - arena["x0"]
+        expect_x = arena["x0"] + max(8, min(12, span // 2))
+        seen["boss"] = abs(game.boss.x / 16 - expect_x) < 1.5 and abs(game.boss.y - 22 * 16) < 2
 
     ns = {"__name__": "__main__", "PROBE": probe}
     exec(compile(source.replace(old, new, 1), str(preview), "exec"), ns)
@@ -112,6 +142,11 @@ def body(tmp):
     req(seen.get("enemy"), "enemy is active in the session")
     req(seen.get("chunk"), "platform is visible in the chunk renderer")
     req(seen.get("screen"), "platform is visible on the game canvas")
+    req(seen.get("arena"), "moved arena, door and ground are in the running game")
+    req(seen.get("hill"), "raised ground stops a falling body")
+    req(seen.get("pit"), "erased floor lets a body fall below the old row")
+    req(seen.get("camera"), "boss camera uses the edited ground")
+    req(seen.get("boss"), "boss spawns at the edited arena")
     req("pouch_uusi_" not in json.dumps(json.loads((ROOT / "maps" / "world.json").read_text(encoding="utf-8"))), "canonical world.json was not rewritten")
 
 

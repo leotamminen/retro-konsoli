@@ -1,0 +1,12 @@
+Päivitys olemassa olevaan editorikansioon
+
+Tässä paketissa ei ole karttoja eikä pelitallennuksia. Älä pura täyttä oletuskarttapakettia oman kansiosi päälle.
+
+1. Sulje editori.
+2. Kopioi tästä paketista kansiot editor ja src sekä tiedostot build.py, run_source.py ja version.json oman kansion päälle.
+3. Älä kopioi mitään maps-kansiosta. Omat world.json- ja vellamo.json-muutoksesi jäävät paikalleen.
+4. Käynnistä kaynnista.bat uudelleen.
+
+Vanha kartta avautuu sellaisenaan. Editori ei tallenna sitä, ellet paina Ctrl+S. Ensimmäinen tallennus tekee varmuuskopion kansioon maps/backups.
+
+Esikatselu rakentaa uuden tiedoston esikatselu/TuonelanPolku-esikatselu.pygame. Se on pelin versio version.jsonista ja sisältää muokatun maan tarvitseman tuen. Tiedostoa TuonelanPolku1.3.5.pygame ei korvata.

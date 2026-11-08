@@ -138,6 +138,65 @@ def body(tmp):
     after = sum(1 for _w, _i, rec in app.doc.spawn_refs() if rec[0] == "susi")
     req(after == before - 1 and not any(rec[0] == "susi" and rec[1] == 23 for _w, _i, rec in app.doc.spawn_refs()), "delete removes the enemy")
 
+    app.tool = "select"
+    app.zoom = 8
+    app.cam_x = 0
+    app.cam_y = 16
+    app.draw()
+    floor_at = tuple(int(v) + 1 for v in app.cell_to_screen(10, 32))
+    app.handle(event(pygame.MOUSEBUTTONDOWN, pos=floor_at, button=1))
+    app.handle(event(pygame.MOUSEBUTTONUP, pos=floor_at, button=1))
+    req(app.selection and app.selection[0] == "tile" and "Valittu ruutu" in app._describe(app.selection), "left click in select mode selects the tile")
+    app.handle(event(pygame.KEYDOWN, key=pygame.K_DELETE, mod=0, unicode=""))
+    req(app.doc.cell(10, 32) == 0 and app.selection is None, "delete key erases the selected floor tile")
+    solid_at = tuple(int(v) + 1 for v in app.cell_to_screen(11, 32))
+    app.handle(event(pygame.MOUSEBUTTONDOWN, pos=solid_at, button=1))
+    app.handle(event(pygame.MOUSEBUTTONUP, pos=solid_at, button=1))
+    remove = next(rect for rect, action, _label, _color in app.widgets if action == ("delete",))
+    app.handle(event(pygame.MOUSEBUTTONDOWN, pos=remove.center, button=1))
+    app.handle(event(pygame.MOUSEBUTTONUP, pos=remove.center, button=1))
+    req(app.doc.cell(11, 32) == 0, "Poista valittu erases the selected tile")
+    app.handle(event(pygame.KEYDOWN, key=pygame.K_z, mod=pygame.KMOD_CTRL, unicode="z"))
+    req(app.doc.cell(11, 32) != 0, "undo restores the deleted tile")
+    fire = tuple(int(v) + 1 for v in app.cell_to_screen(5, app._ground(5) - 1))
+    app.handle(event(pygame.MOUSEBUTTONDOWN, pos=fire, button=1))
+    app.handle(event(pygame.MOUSEBUTTONUP, pos=fire, button=1))
+    req(app.selection and app.selection[0] == "bonfire", "bonfire can be selected")
+    app._delete_selection()
+    req("ei voi poistaa" in app.message and "b0" in app.doc.data["bonfires"], "bonfire deletion explains why and keeps the id")
+
+    app._switch_map("vellamo")
+    app.tool = "select"
+    app.zoom = 4
+    app.cam_x = 540
+    app.cam_y = 0
+    app.draw()
+    arena_before = next(item for item in app.doc.arena_boxes() if item[0] == "joukahainen")
+    spawns_before = [tuple(rec) for _w, _i, rec in app.doc.spawn_refs()]
+    center = tuple(int(v) + 1 for v in app.cell_to_screen((arena_before[1] + arena_before[2]) // 2, 8))
+    app.handle(event(pygame.MOUSEBUTTONDOWN, pos=center, button=1))
+    app.handle(event(pygame.MOUSEBUTTONUP, pos=center, button=1))
+    req(app.selection == ("arena", "joukahainen", "body"), "empty arena interior selects the whole room")
+    app.handle(event(pygame.MOUSEMOTION, pos=(center[0] + app.zoom * 4, center[1]), buttons=(1, 0, 0), rel=(app.zoom * 4, 0)))
+    # motion without a fresh press does nothing; press, drag, release
+    app.handle(event(pygame.MOUSEBUTTONDOWN, pos=center, button=1))
+    app.handle(event(pygame.MOUSEMOTION, pos=(center[0] + app.zoom * 4, center[1]), buttons=(1, 0, 0), rel=(app.zoom * 4, 0)))
+    app.handle(event(pygame.MOUSEBUTTONUP, pos=(center[0] + app.zoom * 4, center[1]), button=1))
+    arena_after = next(item for item in app.doc.arena_boxes() if item[0] == "joukahainen")
+    req(arena_after[1] == arena_before[1] + 4, "dragging the room moves it by four columns")
+    req([tuple(rec) for _w, _i, rec in app.doc.spawn_refs()] == spawns_before, "room drag does not move spawns")
+    edge = tuple(int(v) + 1 for v in app.cell_to_screen(arena_after[2] - 1, 10))
+    app.handle(event(pygame.MOUSEBUTTONDOWN, pos=edge, button=1))
+    app.handle(event(pygame.MOUSEMOTION, pos=(edge[0] + app.zoom * 2, edge[1]), buttons=(1, 0, 0), rel=(app.zoom * 2, 0)))
+    app.handle(event(pygame.MOUSEBUTTONUP, pos=(edge[0] + app.zoom * 2, edge[1]), button=1))
+    req(next(item for item in app.doc.arena_boxes() if item[0] == "joukahainen")[2] == arena_after[2] + 2, "right handle resizes the room")
+    app._switch_map("world")
+    app.cam_x = 0
+    app.cam_y = 16
+    app.zoom = 8
+    app.tool = "select"
+    app.draw()
+
     target = edit_root / "maps" / "world.json"
     raw = target.read_bytes()
     app.handle(event(pygame.QUIT))

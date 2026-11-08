@@ -16,9 +16,19 @@ for _block in _L["blocks"]:
 AREAS.extend(tuple(pair) for pair in _L["areas"])
 BONFIRES.update({k: int(v) for k, v in _L["bonfires"].items()})
 BONFIRE_AREA.update(_L["bonfire_area"])
-for _key, _x0, _x1 in _L["arenas"]:
-    ARENAS[_key] = dict(x0=_x0, x1=_x1, y0=2, ground=_FLOOR, door_in=(_x0, 2, _FLOOR), door_out=None, track=_key)
-    DYN["d_%s_in" % _key] = dict(tiles=_col(_x0, 2, _FLOOR), code=SOLID, active=False, key="vellamo_fog")
+def _arena_spec(rec, floor):
+    """Old saves are [name, x0, x1]. Extra y0/ground, or a dict, are authoritative."""
+    if isinstance(rec, dict):
+        name = rec.get("name", rec.get("id"))
+        return name, int(rec["x0"]), int(rec["x1"]), int(rec.get("y0", 2)), int(rec.get("ground", floor))
+    name, x0, x1 = rec[0], int(rec[1]), int(rec[2])
+    y0 = int(rec[3]) if len(rec) > 3 else 2
+    ground = int(rec[4]) if len(rec) > 4 else floor
+    return name, x0, x1, y0, ground
+for _rec in _L["arenas"]:
+    _key, _x0, _x1, _y0, _ground = _arena_spec(_rec, _FLOOR)
+    ARENAS[_key] = dict(x0=_x0, x1=_x1, y0=_y0, ground=_ground, door_in=(_x0, _y0, _ground), door_out=None, track=_key)
+    DYN["d_%s_in" % _key] = dict(tiles=_col(_x0, _y0, _ground), code=SOLID, active=False, key="vellamo_fog")
 DYN["d_vellamo"] = dict(tiles=_col(486, 2, _FLOOR), code=SOLID, active=True, key="vellamo_fog")
 FLYERS += ("poltto", "merikala", "kutri", "lampi")
 SPAWNS = [sp for sp in SPAWNS if sp[1] < 446] + [tuple(sp) for sp in _L["spawns"]]
@@ -34,7 +44,13 @@ ESPEC.update(joukahainen=dict(hp=1600,w=48,h=90,souls=6000,poise=9999,spd=1.,wak
  lampi=dict(hp=18,w=14,h=14,souls=22,poise=4,spd=.7,wake=160,dmg=14,fly=True),
  rapu=dict(hp=40,w=22,h=14,souls=28,poise=18,spd=.55,wake=140,dmg=18,fly=False))
 BF_START.update(b10=0,b11=0,b12=0,b13=0)
-BONFIRE_POS.update({k: (v * TILE + 8, _FLOOR * TILE) for k, v in BONFIRES.items() if str(k).startswith("b") and int(k[1:]) >= 10})
+def _stand_row(tx, prefer):
+    """Keep the authored floor while it is still ground. A dug or raised column uses the real surface."""
+    tx = int(tx)
+    if 0 <= prefer < ROWS and 0 <= tx < COLS and GRID[prefer][tx] in (SOLID, PLAT):
+        return prefer
+    return floor_row(tx, 0)
+BONFIRE_POS.update({k: (int(v) * TILE + 8, _stand_row(v, _FLOOR) * TILE) for k, v in BONFIRES.items() if str(k).startswith("b") and int(k[1:]) >= 10})
 BF_NAME.update(_L["bonfire_area"])
 PAL.update(ranta=dict(sky=((9,33,40),(26,101,114)),lit=(62,139,128),deep=(19,66,67),top=(75,188,153),top2=(49,120,103),stone=(58,128,136),bw=(9,31,42),bwa=185,ambient=(88,154,153),fog=(83,193,193)),
 syvanne=dict(sky=((4,12,36),(15,48,88)),lit=(36,80,114),deep=(13,37,68),top=(77,135,165),top2=(36,91,130),stone=(48,70,108),bw=(8,20,39),bwa=140,ambient=(50,87,142),fog=(53,100,165)),

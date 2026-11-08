@@ -188,8 +188,6 @@ class MapDoc:
             return False, "tuntematon maasto"
         if not self.in_bounds(x, y):
             return False, "ruutu on kartan ulkopuolella"
-        if self.kind == "vellamo" and y >= int(self.data["floor"]) and code == AIR:
-            return False, "Vellamon lattiaa ei puhkota ilmaksi"
         if base and self.kind == "world":
             return self._paint_base(x, y, code)
         if self.cell(x, y) == code and code == self.base_cell(x, y):
@@ -220,13 +218,8 @@ class MapDoc:
         return True, ""
 
     def erase(self, x, y, base=False):
-        if base and self.kind == "world":
-            return self.paint(x, y, AIR, base=True)
-        if not self.in_bounds(x, y):
-            return False, "ruutu on kartan ulkopuolella"
-        if self.cell(x, y) == self.base_cell(x, y):
-            return True, ""
-        return self.paint(x, y, self.base_cell(x, y), base=False)
+        """Remove the visible cell. Air is written even when the solid comes from the foundation."""
+        return self.paint(x, y, AIR, base=bool(base))
 
     def move_block(self, index, dx, dy):
         blocks = self.blocks()
@@ -263,8 +256,6 @@ class MapDoc:
         if floor is None or floor < 2:
             return False, "tästä ei löydy lattiaa ehdotukselle"
         top = floor - 2
-        if self.kind == "vellamo" and top >= int(self.data["floor"]):
-            return False, "ehdotus osuisi Vellamon lattiaan"
         width = 4
         if x + width > self.width():
             x = self.width() - width
@@ -429,43 +420,104 @@ class MapDoc:
             areas[ident] = self.area_at(column)
         return True
 
-    def arenas(self):
+    def arena_boxes(self):
+        """(name, x0, x1, y0, ground). y0/ground stay implicit on an old 3-item Vellamo row."""
         raw = self.data.get("arenas")
         if self.kind == "vellamo":
-            return [(rec[0], rec[1], rec[2]) for rec in raw or []]
-        return [(key, rec.get("x0"), rec.get("x1")) for key, rec in (raw or {}).items()]
+            floor = int(self.data.get("floor") or 20)
+            boxes = []
+            for rec in raw or []:
+                if isinstance(rec, dict):
+                    boxes.append((rec.get("name", rec.get("id")), int(rec["x0"]), int(rec["x1"]), int(rec.get("y0", 2)), int(rec.get("ground", floor))))
+                elif isinstance(rec, list) and len(rec) >= 3:
+                    y0 = int(rec[3]) if len(rec) > 3 else 2
+                    ground = int(rec[4]) if len(rec) > 4 else floor
+                    boxes.append((rec[0], int(rec[1]), int(rec[2]), y0, ground))
+            return boxes
+        boxes = []
+        for key, rec in (raw or {}).items():
+            if isinstance(rec, dict):
+                boxes.append((key, int(rec.get("x0", 0)), int(rec.get("x1", 0)), int(rec.get("y0", 0)), int(rec.get("ground", 0))))
+        return boxes
+
+    def arenas(self):
+        return [(name, x0, x1) for name, x0, x1, _y0, _ground in self.arena_boxes()]
+
+    def move_arena(self, name, dx, dy):
+        """Shift the room and its doors. Spawns, loot and terrain stay where they are."""
+        if dx == 0 and dy == 0:
+            return True
+        found = {box[0]: box for box in self.arena_boxes()}
+        if name not in found:
+            return False
+        _n, x0, x1, y0, ground = found[name]
+        return self._place_arena(name, x0 + dx, x1 + dx, y0 + dy, ground + dy, "move", dx, dy)
+
+    def resize_arena(self, name, edge, delta):
+        if delta == 0:
+            return True
+        found = {box[0]: box for box in self.arena_boxes()}
+        if name not in found:
+            return False
+        _n, x0, x1, y0, ground = found[name]
+        if edge == "left":
+            x0 += delta
+        elif edge == "right":
+            x1 += delta
+        elif edge == "top":
+            y0 += delta
+        elif edge == "bottom":
+            ground += delta
+        else:
+            return False
+        return self._place_arena(name, x0, x1, y0, ground, edge, delta if edge in ("left", "right") else 0, delta if edge in ("top", "bottom") else 0)
 
     def move_arena_edge(self, name, edge, dx):
-        if dx == 0:
-            return True
-        if self.kind == "vellamo":
-            rec = next((item for item in self.data.get("arenas") or [] if item[0] == name), None)
-            if rec is None:
-                return False
-            x0, x1 = rec[1] + (dx if edge == "left" else 0), rec[2] + (dx if edge == "right" else 0)
-            if not self._arena_span_ok(name, x0, x1):
-                return False
-            self._touch()
-            rec[1], rec[2] = x0, x1
-            return True
-        rec = (self.data.get("arenas") or {}).get(name)
-        if not isinstance(rec, dict):
-            return False
-        x0 = rec["x0"] + (dx if edge == "left" else 0)
-        x1 = rec["x1"] + (dx if edge == "right" else 0)
-        if not self._arena_span_ok(name, x0, x1):
+        return self.resize_arena(name, edge, dx)
+
+    def _place_arena(self, name, x0, x1, y0, ground, mode, dx, dy):
+        if not self._arena_span_ok(name, x0, x1, y0, ground):
             return False
         self._touch()
-        old0, old1 = rec["x0"], rec["x1"]
-        rec["x0"], rec["x1"] = x0, x1
-        self._shift_door(rec, "door_in", old0, x0, "d_%s_in" % name)
-        self._shift_door(rec, "door_out", old1, x1, "d_%s_out" % name)
+        if self.kind == "vellamo":
+            self._write_vellamo_arena(name, x0, x1, y0, ground)
+            return True
+        rec = self.data["arenas"][name]
+        rec["x0"], rec["x1"], rec["y0"], rec["ground"] = x0, x1, y0, ground
+        if mode == "move":
+            self._shift_door_by(rec, "door_in", dx, dy, "d_%s_in" % name)
+            self._shift_door_by(rec, "door_out", dx, dy, "d_%s_out" % name)
+        elif mode == "left":
+            self._set_door_x(rec, "door_in", x0, "d_%s_in" % name)
+        elif mode == "right":
+            self._set_door_x(rec, "door_out", x1, "d_%s_out" % name)
+        elif mode == "top":
+            self._set_door_start(rec, "door_in", y0, "d_%s_in" % name)
+        elif mode == "bottom":
+            self._set_door_end(rec, "door_in", ground, "d_%s_in" % name)
+            self._set_door_end(rec, "door_out", ground, "d_%s_out" % name)
         return True
 
-    def _arena_span_ok(self, name, x0, x1):
-        if x1 - x0 < 8:
+    def _write_vellamo_arena(self, name, x0, x1, y0, ground):
+        floor = int(self.data.get("floor") or 20)
+        for rec in self.data.get("arenas") or []:
+            ident = rec.get("name", rec.get("id")) if isinstance(rec, dict) else rec[0]
+            if ident != name:
+                continue
+            if isinstance(rec, dict):
+                rec["x0"], rec["x1"], rec["y0"], rec["ground"] = x0, x1, y0, ground
+                return
+            if len(rec) <= 3 and y0 == 2 and ground == floor:
+                rec[1], rec[2] = x0, x1
+                return
+            tail = list(rec[5:]) if len(rec) > 5 else []
+            rec[:] = [name, x0, x1, y0, ground] + tail
+            return
+
+    def _arena_span_ok(self, name, x0, x1, y0=0, ground=10):
+        if x1 - x0 < 8 or ground - y0 < 6:
             return False
-        if x0 < self.origin_x() or x1 > self.width():
+        if x0 < self.origin_x() or x1 > self.width() or y0 < 0 or ground >= self.height():
             return False
         for other, left, right in self.arenas():
             if other == name:
@@ -474,17 +526,76 @@ class MapDoc:
                 return False
         return True
 
-    def _shift_door(self, arena, field, old, new, dyn_key):
+    def _door(self, arena, field):
         door = arena.get(field)
-        if not isinstance(door, list) or not door or door[0] != old:
-            return
-        door[0] = new
+        return door if isinstance(door, list) and len(door) >= 3 else None
+
+    def _rebuild_door(self, door, dyn_key):
         dyn = (self.data.get("dyn") or {}).get(dyn_key)
-        if not isinstance(dyn, dict):
+        if not isinstance(dyn, dict) or door is None:
             return
-        for tile in dyn.get("tiles") or []:
-            if isinstance(tile, list) and tile and tile[0] == old:
-                tile[0] = new
+        x, y0, y1 = int(door[0]), int(door[1]), int(door[2])
+        dyn["tiles"] = [[x, y] for y in range(min(y0, y1), max(y0, y1))]
+
+    def _shift_door_by(self, arena, field, dx, dy, dyn_key):
+        door = self._door(arena, field)
+        if door is None or (dx == 0 and dy == 0):
+            return
+        door[0] += dx
+        door[1] += dy
+        door[2] += dy
+        self._rebuild_door(door, dyn_key)
+
+    def _set_door_x(self, arena, field, x, dyn_key):
+        door = self._door(arena, field)
+        if door is None:
+            return
+        door[0] = x
+        self._rebuild_door(door, dyn_key)
+
+    def _set_door_start(self, arena, field, y0, dyn_key):
+        door = self._door(arena, field)
+        if door is None:
+            return
+        door[1] = y0
+        self._rebuild_door(door, dyn_key)
+
+    def _set_door_end(self, arena, field, y1, dyn_key):
+        door = self._door(arena, field)
+        if door is None:
+            return
+        door[2] = y1
+        self._rebuild_door(door, dyn_key)
+
+    def delete_blocked(self, kind, ident=""):
+        if kind == "bonfire":
+            return "Nuotiota %s ei voi poistaa, koska peli ja nuotiovalikko vaativat tunnisteen. Siirrä nuotiota." % ident
+        if kind == "arena":
+            return "Pomohuonetta %s ei voi poistaa, koska taistelu, ovi ja kamera on sidottu siihen. Siirrä huonetta tai vedä reunoista." % ident
+        return None
+
+    def warnings(self):
+        notes = []
+        fires = {ident: int(col) for ident, col in (self.data.get("bonfires") or {}).items()}
+        for _where, _key, rec in self.spawn_refs():
+            if len(rec) < 3:
+                continue
+            for ident, col in fires.items():
+                if abs(int(rec[1]) - col) <= 7:
+                    notes.append("Vihollinen kolumnissa %d on nuotion %s vieressä. Peli ei herätä sitä." % (rec[1], ident))
+                    break
+        for ident, col in fires.items():
+            if not any(self.cell(col, row) in (SOLID, PLAT) for row in range(self.height()) if self.in_bounds(col, row)):
+                notes.append("Nuotion %s alla ei ole maata. Hahmo voi pudota." % ident)
+        for name, x0, x1, y0, ground in self.arena_boxes():
+            blocked = 0
+            span = max(1, x1 - x0 - 1)
+            for x in range(x0 + 1, x1):
+                if self.in_bounds(x, ground - 1) and self.cell(x, ground - 1) == SOLID:
+                    blocked += 1
+            if blocked > span // 2:
+                notes.append("Areenan %s lattian päällä on paljon kiinteää maata. Taistelu voi jumittua." % name)
+        return notes
 
     def validate(self):
         errors = []
@@ -537,21 +648,22 @@ class MapDoc:
             errors.append("Vellamon lattiarivi on rikki")
         self._validate_areas(errors, VELLAMO_ORIGIN, cols)
         self._require_names(errors, self.data.get("bonfires"), VELLAMO_BONFIRES, "nuotio")
-        names = [rec[0] for rec in self.data.get("arenas") or [] if isinstance(rec, list) and rec]
+        names = []
+        for rec in self.data.get("arenas") or []:
+            if isinstance(rec, dict):
+                names.append(rec.get("name", rec.get("id")))
+            elif isinstance(rec, list) and rec:
+                names.append(rec[0])
+            else:
+                errors.append("Vellamon areenarivi on rikki")
         for boss in VELLAMO_BOSSES:
             if boss not in names:
                 errors.append("areena puuttuu: %s" % boss)
-        for rec in self.data.get("arenas") or []:
-            if not (isinstance(rec, list) and len(rec) >= 3):
-                errors.append("Vellamon areenarivi on rikki")
+        for name, x0, x1, y0, ground in self.arena_boxes():
+            if name not in VELLAMO_BOSSES and name not in names:
                 continue
-            if rec[2] - rec[1] < 8 or rec[1] < VELLAMO_ORIGIN or rec[2] > cols:
-                errors.append("areena %s on rajojen ulkopuolella" % rec[0])
-        for block in self.data.get("blocks") or []:
-            if len(block) < 5:
-                continue
-            if block[1] + block[3] > floor and block[4] == AIR:
-                errors.append("ilmalohko puhkoisi Vellamon lattian")
+            if x1 - x0 < 8 or ground - y0 < 6 or x0 < VELLAMO_ORIGIN or x1 > cols or y0 < 0 or ground > ROWS:
+                errors.append("areena %s on rajojen ulkopuolella" % name)
 
     def _validate_areas(self, errors, start, end):
         areas = self.data.get("areas")

@@ -118,8 +118,12 @@ def body(tmp):
     vpath.write_bytes(vraw)
     vdoc = MapDoc.load(vpath)
     comment = vdoc.data["comment"]
-    ok, note = vdoc.paint(500, vdoc.data["floor"], AIR)
-    req(not ok and "lattia" in note, "air cannot punch the Vellamo floor")
+    floor = vdoc.data["floor"]
+    req(vdoc.cell(500, floor) == SOLID, "vellamo floor starts solid")
+    ok, note = vdoc.paint(500, floor, AIR)
+    req(ok and vdoc.cell(500, floor) == AIR, "air removes the visible Vellamo floor")
+    vdoc.undo()
+    req(vdoc.cell(500, floor) == SOLID, "undo restores the floor")
     ok, _note = vdoc.paint(490, 18, PLAT)
     vdoc.data["tekijä"] = "testi"
     req(ok and vdoc.cell(490, 18) == PLAT, "Vellamo platform block")
@@ -130,6 +134,26 @@ def body(tmp):
     req(loaded["floor"] == 20 and loaded["cols"] == 860, "floor and width stay")
     vdoc.undo()
     req(vdoc.cell(490, 18) == vdoc.base_cell(490, 18), "undo removes the Vellamo paint")
+    spawn_before = [list(rec) for _w, _i, rec in vdoc.spawn_refs()]
+    box = next(item for item in vdoc.arena_boxes() if item[0] == "joukahainen")
+    req(vdoc.move_arena("joukahainen", 4, 1), "whole arena moves")
+    moved = next(item for item in vdoc.arena_boxes() if item[0] == "joukahainen")
+    req(moved[1] == box[1] + 4 and moved[4] == box[4] + 1, "arena x and ground both move")
+    req([list(rec) for _w, _i, rec in vdoc.spawn_refs()] == spawn_before, "arena move leaves spawns")
+    req(vdoc.resize_arena("joukahainen", "right", 3), "arena resize handle")
+    req(next(item for item in vdoc.arena_boxes() if item[0] == "joukahainen")[2] == moved[2] + 3, "right edge follows the handle")
+    req(vdoc.delete_blocked("bonfire", "b10"), "bonfire deletion explains itself")
+    req(vdoc.delete_blocked("arena", "joukahainen"), "arena deletion explains itself")
+    vdoc.erase(500, vdoc.data["floor"])
+    notes = vdoc.warnings()
+    ok, errors = vdoc.save(tmp / "warn-vellamo.json")
+    req(ok and errors == [] and notes, "creative warning does not block save")
+    world = MapDoc.load(tmp / "copy-world.json")
+    hid = world.data["arenas"]["hiisi"]["ground"]
+    req(world.move_arena("hiisi", 0, 2), "world arena moves vertically")
+    req(world.data["arenas"]["hiisi"]["ground"] == hid + 2, "boss ground follows")
+    req(world.data["arenas"]["hiisi"]["door_in"][2] == hid + 2, "door bottom follows")
+    req(world.data["dyn"]["d_hiisi_in"]["tiles"][-1][1] == hid + 1, "door tiles follow the new ground")
     missing = subprocess.run([sys.executable, "-c", textwrap.dedent("""
         import sys
         sys.modules["pygame"] = None

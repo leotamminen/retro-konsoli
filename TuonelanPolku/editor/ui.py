@@ -4,8 +4,11 @@ from pathlib import Path
 
 import pygame
 
+import json
+
+from editor import EDITOR_VERSION
 from editor.model import (
-    AIR, SOLID, PLAT, LADDER, THORN, WATER, TILE_NAMES, ADDABLE_ITEMS, MapDoc,
+    AIR, SOLID, PLAT, LADDER, THORN, WATER, TILE_NAMES, MapDoc,
 )
 from editor.preview import build_preview
 
@@ -48,13 +51,13 @@ class EditorApp:
         self.zoom = 8
         self.cam_x = 0.0
         self.cam_y = 16.0
-        self.tool = "paint"
+        self.tool = "select"
         self.tile = PLAT
         self.enemy = "peikko"
         self.item_kind = "souls"
         self.selection = None
         self.drag = None
-        self.message = "Maalaa tasoja ja siirrä merkkejä. Ctrl+S tallentaa varmuuskopion kanssa."
+        self.message = "Valitse-tila: vasen napsautus. Delete tai Poista valittu poistaa. Maalaa muotoilee maata."
         self.help = False
         self.running = True
         self.font = load_font(13)
@@ -95,7 +98,7 @@ class EditorApp:
         y = 32
         widgets = []
 
-        def add(label, action, color=(36, 44, 52), width=172, height=15):
+        def add(label, action, color=(36, 44, 52), width=172, height=14):
             nonlocal y
             rect = pygame.Rect(x, y, width, height)
             widgets.append((rect, action, label, color))
@@ -104,10 +107,13 @@ class EditorApp:
         add("Maailma", ("map", "world"), (70, 90, 60) if self.map_id == "world" else (36, 44, 52))
         add("Vellamo", ("map", "vellamo"), (40, 90, 110) if self.map_id == "vellamo" else (36, 44, 52))
         y += 4
-        for key, label in (("paint", "Maalaa lohko"), ("erase", "Pyyhi lohko"), ("select", "Valitse"), ("base", "Pohjajuova"), ("suggest", "Ehdota tasannetta")):
-            if key == "base" and self.map_id != "world":
-                continue
-            add(label, ("tool", key), (90, 70, 40) if self.tool == key else (36, 44, 52))
+        add("Valitse", ("tool", "select"), (210, 170, 40) if self.tool == "select" else (36, 44, 52))
+        add("Maalaa", ("tool", "paint"), (90, 70, 40) if self.tool == "paint" else (36, 44, 52))
+        add("Pyyhi", ("tool", "erase"), (90, 70, 40) if self.tool == "erase" else (36, 44, 52))
+        add("Poista valittu", ("delete",), (150, 48, 42) if self._selection_alive() else (70, 40, 40))
+        if self.map_id == "world":
+            add("Pohjajuova", ("tool", "base"), (90, 70, 40) if self.tool == "base" else (36, 44, 52))
+        add("Ehdota tasannetta", ("tool", "suggest"), (36, 44, 52))
         y += 4
         for code, label in ((SOLID, "Maa"), (PLAT, "Taso"), (WATER, "Vesi"), (LADDER, "Tikkaat"), (THORN, "Piikit"), (AIR, "Ilma")):
             add(label, ("tile", code), TILE_COLOR.get(code, (28, 32, 38)) if self.tile == code else (36, 44, 52))
@@ -231,7 +237,7 @@ class EditorApp:
             if self.selection:
                 self.drag = ("move", cell)
                 self.doc.begin_stroke()
-                self.message = self._describe(self.selection)
+                self.message = "Valittu. Delete tai Poista valittu poistaa. Shift+nuoli tai raahaus siirtää."
             else:
                 self.message = "Ei valittavaa ruudussa %d,%d." % cell
             return
@@ -293,7 +299,14 @@ class EditorApp:
                     self.tool = "select"
             else:
                 self.tool = action[1]
-                self.message = "Pohjajuova muuttaa tiivistettyä perusriviä." if self.tool == "base" else "Lohkosivellin ei muuta tiivistettyjä perusrivejä."
+                self.message = {
+                    "select": "Valitse-tila päällä. Vasen napsautus valitsee. Delete tai Poista valittu poistaa.",
+                    "paint": "Maalaa muuttaa näkyvän ruudun. Vellamon lattian voi pyyhkiä ilmaksi.",
+                    "erase": "Pyyhi poistaa näkyvän ruudun, myös perustan.",
+                    "base": "Pohjajuova kirjoittaa tiivistetyn perusrivin. Tavallinen pyyhkiminen ei koske siihen.",
+                }.get(self.tool, self.message)
+        elif kind == "delete":
+            self._delete_selection()
         elif kind == "tile":
             self.tile = action[1]
             self.tool = "paint"
@@ -337,29 +350,44 @@ class EditorApp:
         elif kind == "bonfire":
             moved = self.doc.move_bonfire(self.selection[1], dx) if dy == 0 else False
         elif kind == "arena":
-            moved = self.doc.move_arena_edge(self.selection[1], self.selection[2], dx) if dy == 0 else False
+            edge = self.selection[2]
+            if edge == "body":
+                moved = self.doc.move_arena(self.selection[1], dx, dy)
+            elif edge in ("left", "right") and dx:
+                moved = self.doc.resize_arena(self.selection[1], edge, dx)
+            elif edge in ("top", "bottom") and dy:
+                moved = self.doc.resize_arena(self.selection[1], edge, dy)
+            else:
+                moved = True
+        elif kind == "tile":
+            self.message = "Ruutua ei siirretä. Pyyhi tai maalaa sitä."
+            return False
         if not moved:
             self.message = "Siirto ei onnistu rajojen tai areenan takia."
         return moved
 
     def _delete_selection(self):
-        if not self.selection:
+        if not self._selection_alive():
+            self.selection = None
+            self.message = "Ei valintaa. Vaihda Valitse-tilaan ja napsauta kohdetta."
             return
         kind = self.selection[0]
+        blocked = self.doc.delete_blocked(kind, self.selection[1] if len(self.selection) > 1 else "")
+        if blocked:
+            self.message = blocked
+            return
+        self.doc.begin_stroke()
         if kind == "block":
             self.doc.delete_block(self.selection[1])
         elif kind == "spawn":
             self.doc.delete_spawn(self.selection[1], self.selection[2])
         elif kind == "item":
             self.doc.delete_item(self.selection[1], self.selection[2])
-        elif kind == "bonfire":
-            self.message = "Nuotion tunnistetta ei poisteta. Sitä voi siirtää."
-            return
-        elif kind == "arena":
-            self.message = "Pomohuonetta ei poisteta. Reunoja voi siirtää."
-            return
+        elif kind == "tile":
+            self.doc.erase(self.selection[1], self.selection[2])
+        self.doc.end_stroke()
         self.selection = None
-        self.message = "Poistettu."
+        self.message = "Poistettu. Ctrl+Z peruu."
 
     def _pick(self, cell):
         x, y = cell
@@ -373,18 +401,30 @@ class EditorApp:
         for ident, column in (self.doc.data.get("bonfires") or {}).items():
             if column == x and abs(self._ground(column) - y) <= 1:
                 return ("bonfire", ident)
-        for name, left, right in self.doc.arenas():
-            if y < 2:
-                continue
-            if abs(x - left) <= 0:
+        box = None
+        for name, left, right, top, ground in self.doc.arena_boxes():
+            if left <= x < right and top <= y <= ground:
+                box = (name, left, right, top, ground)
+                break
+        if box:
+            name, left, right, top, ground = box
+            if x == left:
                 return ("arena", name, "left")
-            if abs(x - (right - 1)) <= 0:
+            if x == right - 1:
                 return ("arena", name, "right")
+            if y == top:
+                return ("arena", name, "top")
+            if y == ground:
+                return ("arena", name, "bottom")
         blocks = self.doc.blocks()
         for index in range(len(blocks) - 1, -1, -1):
             bx, by, bw, bh = blocks[index][:4]
             if bx <= x < bx + bw and by <= y < by + bh:
                 return ("block", index)
+        if box and self.doc.cell(x, y) == AIR:
+            return ("arena", box[0], "body")
+        if self.doc.in_bounds(x, y):
+            return ("tile", x, y)
         return None
 
     def _ground(self, column):
@@ -393,20 +433,51 @@ class EditorApp:
                 return row
         return self.doc.height() - 1
 
+    def _selection_alive(self):
+        sel = self.selection
+        if not sel:
+            return False
+        kind = sel[0]
+        try:
+            if kind == "block":
+                return 0 <= sel[1] < len(self.doc.blocks())
+            if kind == "spawn":
+                return 0 <= sel[2] < len(self.doc._spawn_list(sel[1]))
+            if kind == "item":
+                return self.doc._item_record(sel[1], sel[2])[0] is not None
+            if kind == "bonfire":
+                return sel[1] in (self.doc.data.get("bonfires") or {})
+            if kind == "arena":
+                return any(box[0] == sel[1] for box in self.doc.arena_boxes())
+            if kind == "tile":
+                return self.doc.in_bounds(sel[1], sel[2])
+        except (IndexError, KeyError, TypeError):
+            return False
+        return False
+
     def _describe(self, selection):
+        if not selection:
+            return "Ei valintaa."
         kind = selection[0]
         if kind == "spawn":
             rec = self.doc._spawn_list(selection[1])[selection[2]]
-            return "Vihollinen %s. Valmis käytös, ei uutta dialogia." % rec[0]
+            return "Valittu vihollinen %s, ruutu %d,%d. Delete poistaa spawnin. Uutta tekoälyä ei kirjoiteta." % (rec[0], rec[1], rec[2])
         if kind == "item":
-            return "Esine. Tunniste säilyy siirrossa."
+            return "Valittu esine. Delete poistaa sen. Tunniste säilyy siirrossa."
         if kind == "bonfire":
-            return "Nuotio %s. Tunnistetta ei poisteta." % selection[1]
+            return "Valittu nuotio %s. Sitä ei voi poistaa, koska peli vaatii tunnisteen. Shift+nuoli siirtää." % selection[1]
         if kind == "arena":
-            return "Areena %s, reuna %s. Ovet seuraavat rajaa." % (selection[1], "vasen" if selection[2] == "left" else "oikea")
+            box = next(item for item in self.doc.arena_boxes() if item[0] == selection[1])
+            edge = {"body": "koko huone", "left": "vasen reuna", "right": "oikea reuna", "top": "yläreuna", "bottom": "alareuna"}.get(selection[2], selection[2])
+            return "Valittu pomohuone %s (%s), x %d–%d, maa %d. Keskusta siirtää, reunat muuttavat kokoa. Muut esineet eivät liiku." % (box[0], edge, box[1], box[2], box[4])
         if kind == "block":
-            return "Maalohko. Delete poistaa sen."
-        return ""
+            block = self.doc.blocks()[selection[1]]
+            return "Valittu maalohko %d,%d koko %dx%d. Delete poistaa lohkon." % (block[0], block[1], block[2], block[3])
+        if kind == "tile":
+            code = self.doc.cell(selection[1], selection[2])
+            source = "lohko" if code != self.doc.base_cell(selection[1], selection[2]) else "perusta"
+            return "Valittu ruutu %d,%d: %s (%s). Delete pyyhkii näkyvän maan." % (selection[1], selection[2], TILE_NAMES.get(code, "?"), source)
+        return "Valinta."
 
     def _save(self):
         ok, errors = self.doc.save()
@@ -420,7 +491,10 @@ class EditorApp:
             self.message = "Esikatselu käyttää tallennettua karttaa. Tallenna ensin Ctrl+S."
             return
         ok, note, dest = build_preview(self.root)
-        self.message = ("Esikatselu: %s" % dest.name) if ok else (note.splitlines()[-1] if note else "Esikatselu epäonnistui.")
+        if ok:
+            self.message = "Esikatselu %s on peliversio %s ja sisältää maaston tuen. Julkaistua tiedostoa ei korvattu." % (dest.name, self._game_version())
+        else:
+            self.message = note.splitlines()[-1] if note else "Esikatselu epäonnistui."
 
     def draw(self):
         self._layout()
@@ -463,6 +537,10 @@ class EditorApp:
         for rec in levers.values():
             sx, sy = self.cell_to_screen(rec["tx"], rec["ty"])
             pygame.draw.line(screen, (180, 180, 190), (sx, sy + self.zoom), (sx + self.zoom / 2, sy), 2)
+        if not self._selection_alive():
+            self.selection = None
+        else:
+            self._draw_selection(screen)
         screen.set_clip(clip)
         pygame.draw.rect(screen, (12, 14, 18), (view.right, 0, 188, screen.get_height()))
         for rect, _action, label, color in self.widgets:
@@ -471,10 +549,10 @@ class EditorApp:
             screen.blit(self.font.render(label, True, (245, 245, 235)), (rect.x + 4, rect.y + 1))
         title = "Maailma" if self.map_id == "world" else "Vellamo"
         dirty = "muokattu" if self.doc.dirty else "tallessa"
-        screen.blit(self.font.render("%s  %s  zoom %d" % (title, dirty, self.zoom), True, (240, 230, 200)), (8, 6))
-        foot = self.message
-        screen.blit(self.font.render(foot[:110], True, (220, 220, 210)), (8, screen.get_height() - 44))
-        screen.blit(self.font.render("Nuolet siirtävät näkymää. Shift+nuoli siirtää valintaa. F1 ohje. Vipuja ei muokata.", True, (170, 170, 160)), (8, screen.get_height() - 24))
+        screen.blit(self.font.render("Editori %s  %s  %s  zoom %d  peli %s" % (EDITOR_VERSION, title, dirty, self.zoom, self._game_version()), True, (240, 230, 200)), (8, 6))
+        screen.blit(self.font.render(self.message[:120], True, (220, 220, 210)), (8, screen.get_height() - 44))
+        status = self._describe(self.selection) if self.selection else "Ei valintaa. Valitse-tila ja vasen napsautus. Delete tai Poista valittu poistaa."
+        screen.blit(self.font.render(status[:120], True, (255, 220, 80)), (8, screen.get_height() - 24))
         if self.help:
             self._help()
 
@@ -482,18 +560,59 @@ class EditorApp:
         panel = pygame.Surface((520, 250), pygame.SRCALPHA)
         panel.fill((8, 10, 14, 230))
         lines = [
-            "Hiiri: maalaa, pyyhi, valitse. Rulla zoomaa, keskinäppäin vierittää.",
-            "1–6 maa, taso, vesi, tikkaat, piikit, ilma. Tab vaihtaa karttaa.",
-            "Lohkosivellin ei kirjoita perusmaailman tiivistettyjä rivejä.",
-            "Pohjajuova kirjoittaa vain kosketun rivin. Vellamon lattia pysyy kiinteänä.",
-            "Vihollinen valitaan listasta. Pomot ovat areenoiden rajoja, ei spawneja.",
-            "Uusi esine on sielupussi tai pullo. Taikoja ja dialogia ei kirjoiteta.",
+            "Valitse-tila: vasen napsautus. Keltainen kehys näyttää valinnan.",
+            "Delete ja Poista valittu poistavat. Nuotiota ja pomohuonetta ei poisteta, syy näkyy.",
+            "Pomohuoneen tyhjä keskusta siirtää huoneen. Reunat muuttavat kokoa. Ovet seuraavat.",
+            "Viholliset, esineet ja maasto eivät liiku huoneen mukana.",
+            "Pyyhi ja Delete ruudulla poistavat näkyvän maan, myös Vellamon lattian.",
+            "Pohjajuova kirjoittaa tiivistetyn rivin. Tavallinen pyyhintä lisää ilmalohkon.",
             "Ctrl+S tallentaa ja tekee varmuuskopion. Sulkeminen ei tallenna.",
-            "Esikatselu rakentaa erillisen tiedoston, ei julkaistua 1.3.5-peliä.",
+            "Esikatselu on uusi pelitiedosto, jossa on tämä editorin vaatima tuki. Vanhaa julkaisua ei korvata.",
         ]
         for index, line in enumerate(lines):
             panel.blit(self.font.render(line, True, (235, 235, 225)), (12, 12 + index * 28))
         self.screen.blit(panel, (16, 40))
+
+    def _game_version(self):
+        try:
+            return json.loads((self.root / "version.json").read_text(encoding="utf-8"))["version"]
+        except (OSError, json.JSONDecodeError, KeyError):
+            return "?"
+
+    def _draw_selection(self, screen):
+        sel = self.selection
+        color = (255, 220, 40)
+        if sel[0] == "tile":
+            sx, sy = self.cell_to_screen(sel[1], sel[2])
+            pygame.draw.rect(screen, color, pygame.Rect(int(sx), int(sy), self.zoom, self.zoom), 3)
+            return
+        if sel[0] == "block":
+            block = self.doc.blocks()[sel[1]]
+            sx, sy = self.cell_to_screen(block[0], block[1])
+            pygame.draw.rect(screen, color, pygame.Rect(int(sx), int(sy), block[2] * self.zoom, block[3] * self.zoom), 3)
+            return
+        if sel[0] == "arena":
+            box = next(item for item in self.doc.arena_boxes() if item[0] == sel[1])
+            _name, x0, x1, y0, ground = box
+            sx, sy = self.cell_to_screen(x0, y0)
+            pygame.draw.rect(screen, color, pygame.Rect(int(sx), int(sy), (x1 - x0) * self.zoom, (ground - y0 + 1) * self.zoom), 3)
+            for hx, hy in ((x0, y0), (x1 - 1, y0), (x0, ground), (x1 - 1, ground)):
+                px, py = self.cell_to_screen(hx, hy)
+                pygame.draw.rect(screen, (255, 80, 40), pygame.Rect(int(px), int(py), self.zoom, self.zoom))
+            return
+        if sel[0] == "spawn":
+            rec = self.doc._spawn_list(sel[1])[sel[2]]
+            sx, sy = self.cell_to_screen(rec[1], rec[2])
+        elif sel[0] == "bonfire":
+            column = int(self.doc.data["bonfires"][sel[1]])
+            sx, sy = self.cell_to_screen(column, max(0, self._ground(column) - 1))
+        elif sel[0] == "item":
+            rec = self.doc._item_record(sel[1], sel[2])[0]
+            tx, ty = (rec[1], rec[2]) if sel[1] == "extra" or self.doc.kind == "vellamo" else (rec[0], rec[1])
+            sx, sy = self.cell_to_screen(tx, ty)
+        else:
+            return
+        pygame.draw.rect(screen, color, pygame.Rect(int(sx) - 2, int(sy) - 2, self.zoom + 4, self.zoom + 4), 3)
 
     def save_png(self, path):
         self.draw()

@@ -6,18 +6,20 @@ Käynnistys komentoriviltä, kansion TuonelanPolku sisältä:
 
 Kaksi karttaa: Maailma (metsä, suo, joki, Pohjola) ja Vellamo. Tab vaihtaa karttaa.
 
-Hiiri
-- Vasen nappi maalaa, pyyhkii tai lisää sen, mikä työkalu on valittuna.
-- Oikea nappi valitsee lohkon, vihollisen, esineen, nuotion tai areenan reunan.
-- Rulla zoomaa. Keskinäppäin vierittää.
-- Nuolinäppäimet vierittävät. Shift+nuoli siirtää valintaa. Delete poistaa valinnan.
+Editorin versio näkyy ikkunan yläreunassa. Se ei ole sama numero kuin peli.
 
-Maasto
-- Maa, taso, vesi, tikkaat ja piikit ovat pelin oikeita ruutuja.
-- Maalaa lohko lisää päällekkäisen lohkon. Perusmaailman tiivistetyt rivit eivät muutu.
-- Pohjajuova kirjoittaa vain sen rivin, jota kosketat.
-- Vellamossa lattiarivi ja sen alapuoli ovat valmiiksi maata. Ilmalla ei puhkota lattiaa.
-- Ehdota tasannetta lisää lyhyen tason tyhjään kohtaan. Siirrä tai poista se itse.
+Hiiri
+- Valitse-tila on oletus. Vasen napsautus valitsee ruudun, lohkon, vihollisen, esineen, nuotion tai pomohuoneen.
+- Keltainen kehys ja alareunan keltainen teksti kertovat, mikä on valittuna.
+- Delete-näppäin ja painike Poista valittu poistavat valinnan. Jos poistaminen on kielletty, alareuna kertoo syyn.
+- Maalaa ja Pyyhi muotoilevat näkyvän maan, myös Vellamon lattian. Kuoppa, porras ja korotus ovat tavallisia ruutuja.
+- Rulla zoomaa. Keskinäppäin vierittää.
+- Nuolinäppäimet vierittävät. Shift+nuoli siirtää valintaa.
+
+Pomohuone
+- Tyhjä keskusta valitsee koko huoneen. Raahaus siirtää huoneen, oven, pomon syntypaikan ja kameran.
+- Reunojen kahvat muuttavat kokoa. Viholliset, esineet ja maasto eivät liiku huoneen mukana.
+- Pomohuonetta ja nuotion tunnistetta ei voi poistaa. Niitä voi siirtää.
 
 Viholliset ja esineet
 - Vihollinen valitaan listasta. Maailmassa on maan viholliset, Vellamossa veden viholliset.
@@ -36,8 +38,8 @@ Tallennus
 
 Esikatselu
 - Esikatsele peli rakentaa tiedoston esikatselu/TuonelanPolku-esikatselu.pygame.
-- Se ei korvaa TuonelanPolku1.3.5.pygame eikä vanhempia julkaisuja.
-- Tallenna kartta ennen esikatselua. Esikatselu käyttää viimeksi tallennettua JSONia.
+- Siinä on muokattu kartta ja tämän editorin tarvitsema pelituki. TuonelanPolku1.3.5.pygame jää ennalleen.
+- Tallenna kartta ennen esikatselua. Editori ei tallenna karttaa avatessa.
 
 Esimerkki
 1. Avaa maailma. Vieritä nuolilla metsän maahan.
