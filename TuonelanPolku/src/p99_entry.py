@@ -1,5 +1,3 @@
-# Single entrypoint. Every module above has already run.
-VERSION = "1.3.4"
-
+# Single entrypoint. VERSION is injected from version.json by build.py before this file.
 if __name__ == "__main__":
     main()

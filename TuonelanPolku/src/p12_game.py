@@ -586,12 +586,20 @@ class GameCore:
             a = ARENAS[s.arena]
             room_l, room_r = a["x0"] * TILE, a["x1"] * TILE
             ty = a["ground"] * TILE + 8 - H
-            if room_r - room_l <= W + 8:
+            margin = 36
+            if room_r - room_l <= W:
                 tx = room_l - 8
             else:
-                focus = mx
-                if s.boss is not None and not s.boss.dead: focus = mx * 0.42 + s.boss.x * 0.58
-                tx = max(room_l - 16, min(room_r - W + 8, focus - W * 0.45))
+                if s.boss is not None and not s.boss.dead:
+                    left = min(mx - 12, s.boss.x - 40)
+                    right = max(mx + 12, s.boss.x + 40)
+                else:
+                    left, right = mx - 20, mx + 20
+                if right - left <= W - 2 * margin:
+                    tx = left - margin
+                else:
+                    tx = (left + right) * 0.5 - W * 0.5
+                tx = max(room_l, min(room_r - W, tx))
         tx = max(0, min(COLS * TILE - W, tx)); ty = max(0, min(ROWS * TILE - H, ty))
         return tx, ty
     def snap_cam(s):

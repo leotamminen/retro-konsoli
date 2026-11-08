@@ -1,31 +1,35 @@
-# Tuonelan polku, lähdekoodi
+# Tuonelan polku source
 
-Julkaisu on yksi pygame-tiedosto. Lähde on tässä kansiossa. `master` pitää vanhat julkaisut koskemattomina. Uusi työ tehdään kehityshaarassa.
+The playable release is one pygame file. This folder is the source. Older releases in the repository stay byte-for-byte as they are. Do not commit to `master` from this work.
 
-## Kokoaminen
+## Version
+
+`version.json` is the only version. `build.py` embeds that string once and names the release `TuonelanPolku<version>.pygame`. The title reads the same value. Source modules do not assign `VERSION`.
+
+## Build
+
+From this directory:
 
 ```bash
 python3 build.py
 ```
 
-Komento lukee `src/pNN_*.py` numerojärjestyksessä ja upottaa `maps/vellamo.json` ennen Vellamo-moduulia. Tuloksena on `TuonelanPolku1.3.4.pygame`. Pelissä ei ole uutta ajonaikaista kirjastoa: vain Python 3 ja pygame 2.6.1. Kartta ja äänet syntyvät pelin sisällä.
+The script reads `src/pNN_*.py` in numeric order and embeds `maps/world.json` and `maps/vellamo.json`. The built file does not open those JSON files at runtime. Runtime dependencies stay Python 3 and pygame 2.6.1. Audio is still generated in the game. The only `main()` call is `src/p99_entry.py`.
 
-Ainoa käynnistys on `src/p99_entry.py` tiedoston lopussa. Sitä ennen kaikki määritelmät on suoritettu.
+Module responsibilities, and the patches that are still separate, are listed in `src/LAYERS.md`.
 
-## Testaus
+## Maps
+
+`maps/world.json` is the forest, swamp, river and Pohjola. `rows` is run-length encoding, `count:tile`. Tiles are 0 air, 1 solid, 2 platform, 3 ladder, 4 thorns, 5 water. `extras.blocks` adds optional platforms as `[x, y, w, h, t]` and does not rewrite the first three boss rooms. `maps/vellamo.json` is the later realm in the same block form, on a solid floor at row 20. Leave the boss columns named in that file empty.
+
+Edit the JSON, run `python3 build.py`, then `python3 tests/test_routes.py`. There is no separate editor program.
+
+## Tests
 
 ```bash
 python3 tests/test_release.py
+python3 tests/test_routes.py
+bash tests/run_all.sh
 ```
 
-Testi käynnistää kootun tiedoston `__main__`-tilassa ja ajaa oikeaa `update`- ja `draw`-silmukkaa. Ohjaimet ovat SDL:n virtuaalilaitteita, eivät fyysistä DualShockia tai Batoceraa. Kuvat kirjoitetaan `/tmp/tp134`.
-
-## Kartta
-
-`maps/vellamo.json` on Vellamon lohkolista. Kenttä `blocks` on listoja `[x, y, w, h, t]`. `t` on 0 ilma, 1 kiinteä, 2 taso, 5 vesi. `x` ja `y` ovat tiiliruutuja. Pohja on ilmaa rivin 20 yläpuolella ja kiinteää siitä alaspäin. Kokoamisen jälkeen peli ei lue tiedostoa uudestaan.
-
-Vanha metsä, suo ja joki ovat yhä koodissa `src/p3_world.py`. Niiden pomotaistelut on jätetty ennalleen.
-
-## Ehdotus editoriksi
-
-Erillistä editoria ei ole, eikä uusi työkalu ole pakollinen. Käytännöllinen seuraava askel on pieni pygame-ikkuna, joka piirtää `vellamo.json`-lohkot, liikuttaa osoitinta nuolilla ja tallentaa saman jsonin. Leo voi jo nyt siirtää, lisätä ja poistaa lohkoja tekstinä ja koota pelin uudestaan. Koko peruskartan vienti samaan muotoon on eri työ, eikä sitä ole tehty tässä versiossa.
+`test_release.py` executes the built file as `__main__` and drives `update`/`draw`. `run_all.sh` rebuilds, executes that same file as a library so the loop does not start, and runs the older regression scripts. Controllers here are SDL virtual devices or script pads, not a physical DualShock and not Batocera. Release-test screenshots go to `/tmp/tp134`.

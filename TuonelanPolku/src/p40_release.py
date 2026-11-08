@@ -59,6 +59,7 @@ for _key, _fi, _en in (
     ("info_author", "Leo Tamminen", "Leo Tamminen"),
     ("info_note", "Yksi tiedosto. Kartta ja aanet syntyvat pelissa.", "One file. Maps and audio are made in game."),
     ("info_back", "Hyppy tai väistö palaa", "Jump or dodge returns"),
+    ("set_test_weapon", "Testiase", "Test weapon"),
     ("test_weapon_hud", "TESTIASE", "TEST WEAPON"),
     ("sd_test_weapon", "Testiase: valtava vahinko. Ei tallennu varusteeksi. Oletus pois.", "Test weapon: very high damage. Not saved as gear. Default off."),
     ("bf_b9", "Pohjolan nuotio", "Pohjola Bonfire"),

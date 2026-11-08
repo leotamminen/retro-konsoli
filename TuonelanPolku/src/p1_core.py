@@ -7,7 +7,6 @@ import pygame
 
 W, H = 320, 180
 TILE = 16
-VERSION = "1.2"
 FPS = 60
 
 # ---------------- physics constants (shared by the game and the traversal tests) ----------------

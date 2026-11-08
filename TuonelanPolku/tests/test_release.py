@@ -159,26 +159,63 @@ def PROBE(g):
     shots = []
     for key in ("joukahainen", "ahti", "aino", "vellamo"):
         g.start_boss(key)
-        g.snap_cam()
-        g.draw_world(g.canvas, 0)
-        sx = g.boss.x - g.cam[0]
-        shots.append((key, round(sx, 1), g.boss.face))
-        pygame.image.save(g.canvas, str(OUT / f"boss_{key}.png"))
+        for phase, pose in ((1, "idle"), (2, "windup"), (3, "attack")):
+            g.boss.phase = phase
+            g.boss.vb = pose
+            g.players[0].x = max(g.boss.L + 20, g.boss.x - 90)
+            g.players[0].face = 1
+            for _ in range(6):
+                g.update_camera()
+            sx = g.boss.x - g.cam[0]
+            px = g.players[0].x - g.cam[0]
+            shots.append((key, phase, round(sx, 1), round(px, 1)))
+            if phase == 1:
+                g.draw_world(g.canvas, phase)
+                pygame.image.save(g.canvas, str(OUT / f"boss_{key}.png"))
         g.reset_boss()
     R["boss_screen_x"] = shots
-    check("all new bosses are on screen", all(24 < x < 300 for _, x, _ in shots), shots)
+    check("bosses stay on screen in every phase while the player moves",
+          all(20 < sx < ns["W"] - 20 and 12 < px < ns["W"] - 12 for _, _, sx, px in shots), shots)
 
     # Shore is traversable for a quiet stretch.
     shore = ns["new_save"]("warrior")
     shore["bonfire"] = "b10"; shore["seen"] = ["b10"]; shore["bosses"] = ["louhi"]; shore["vellamo_unlocked"] = True
     g.start_session(shore, ap)
     x0 = g.players[0].x
-    for _ in range(40):
-        buttons(a_raw, set()); sdl.SDL_JoystickSetVirtualAxis(a_raw, 0, 28000)
-        g.state_name = "play"; g.true_end_delay = 0
-        g.update()
+    seen_areas = set()
+    samples = []
+    goal = (ns["COLS"] - 4) * ns["TILE"]
+    for i in range(5200):
+        blocked = g.players[0].wall or (i > 20 and g.players[0].x < x0 + i * 0.15 and g.players[0].on_ground)
+        buttons(a_raw, {0} if blocked and i % 18 == 0 else set())
+        sdl.SDL_JoystickSetVirtualAxis(a_raw, 0, 28000)
+        g.state_name = "play"; g.true_end_delay = 0; g.dying = 0
+        g.players[0].inv = 999
+        t0 = time.perf_counter()
+        g.update(); g.draw()
+        samples.append((time.perf_counter() - t0) * 1000.0)
+        seen_areas.add(g.area)
+        x0 = min(x0, g.players[0].x)
+        if g.players[0].x >= goal and g.players[0].alive():
+            break
     sdl.SDL_JoystickSetVirtualAxis(a_raw, 0, 0)
-    check("shore can be walked", g.players[0].x > x0 + 30 and g.players[0].alive(), round(g.players[0].x - x0, 1))
+    samples.sort()
+    def pct(p):
+        return round(samples[min(len(samples) - 1, int(round((len(samples) - 1) * p)))], 2)
+    R["traversal"] = {"frames": len(samples), "x": round(g.players[0].x, 1), "goal": goal,
+                      "areas": sorted(seen_areas), "alive": g.players[0].alive(),
+                      "p99": pct(0.99), "worst": round(samples[-1], 2)}
+    print("TRAVERSAL", R["traversal"], flush=True)
+    check("real loop reaches the last columns alive", g.players[0].alive() and g.players[0].x >= goal, R["traversal"])
+    check("the walk crosses shore, depths and cathedral", {"ranta", "syvanne", "katedraali"} <= seen_areas, sorted(seen_areas))
+    g.players[0].inv = 0
+    g.players[0].die()
+    for _ in range(220):
+        g.update()
+        if g.dying == 0 and g.players[0].hp > 0:
+            break
+    home = ns["bonfire_pos"](g.save["bonfire"])
+    check("death respawns at the current bonfire", abs(g.players[0].x - home[0]) < 80, (round(g.players[0].x, 1), g.save["bonfire"]))
     g.draw(); pygame.image.save(g.canvas, str(OUT / "shore.png"))
 
     names = {}
@@ -209,6 +246,7 @@ def PROBE(g):
     hero["stats"]["str"] = 6
     hero["souls"] = 2500
     hero["taken"] = ["c_moss"]
+    hero["p2"] = {"cls": "sage", "level": 4, "stats": {"vit": 1, "end": 1, "str": 1, "foc": 0}, "souls": 40}
     hero["bosses"] = ["vellamo", "louhi", "aino"]
     hero["vellamo_done"] = True
     hero["ng_ready"] = True
@@ -221,7 +259,7 @@ def PROBE(g):
     g.begin_ng(hero)
     if g.state_name == "loading":
         g.up_loading()
-    check("NG+ keeps level and gear", g.save["stats"]["str"] == 6 and "c_moss" in g.save["taken"] and g.save["souls"] == 2500)
+    check("NG+ keeps level and gear", g.save["stats"]["str"] == 6 and "c_moss" in g.save["taken"] and g.save["souls"] == 2500 and g.save["p2"]["cls"] == "sage" and g.save["p2"]["stats"]["vit"] == 1)
     check("NG+ resets bosses and raises the cycle", g.save["bosses"] == [] and g.save["ng"] == 1 and g.save["vellamo_unlocked"] is False)
 
     taken = list(g.save["taken"])

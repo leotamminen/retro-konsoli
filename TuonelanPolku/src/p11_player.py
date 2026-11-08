@@ -565,12 +565,13 @@ class Player(Body):
             if s.revive_t > 0: pygame.draw.rect(surf, (140, 255, 160), (x - 8, y - 38, int(16 * s.revive_t / 70.0), 2))
 
 def physical_pad(s, skip=None):
-    """First SDL GameController or raw joystick. Never the keyboard."""
+    """First non-keyboard pad. The always-present keyboard is never a silent P2."""
     for pad in s.pads.values():
         if pad is skip or pad is getattr(s, "kb", None):
             continue
-        if getattr(pad, "kind", None) in ("gc", "js"):
-            return pad
+        if getattr(pad, "kind", None) in ("kb", "idle"):
+            continue
+        return pad
     return None
 
 def join_pad(s, pred):

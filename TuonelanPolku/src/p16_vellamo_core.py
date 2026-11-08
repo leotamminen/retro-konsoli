@@ -1,5 +1,4 @@
 # Vellamo topography comes from maps/vellamo.json, embedded by build.py as VELLAMO_LAYOUT.
-VERSION="1.3"
 _L = VELLAMO_LAYOUT
 NEWCOLS = int(_L["cols"])
 _FLOOR = int(_L["floor"])

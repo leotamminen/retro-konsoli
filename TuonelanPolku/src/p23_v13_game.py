@@ -1,6 +1,5 @@
 """Vellamo world, UI and saved continuation. Only the new columns change legacy hazard rules."""
 import gc
-VERSION='1.3.2'
 _spawn=GameCore.spawn_enemies
 def spawn_enemies(s):
     _spawn(s)

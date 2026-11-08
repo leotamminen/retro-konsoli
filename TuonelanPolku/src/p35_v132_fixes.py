@@ -1,5 +1,4 @@
-"""1.3.2: complete bonfire names, directional shots and obvious Vellamo entrance."""
-VERSION='1.3.2'
+"""Bonfire names, directional shots and the Vellamo entrance."""
 for b,nm,en in [
  ('b9','Pohjolan nuotio','Pohjola Bonfire'),('b10','Aallon ranta','Shimmering Shore'),
  ('b11','Syvänteen nuotio','Depths Bonfire'),('b12','Temppelin nuotio','Cathedral Bonfire'),
