@@ -27,7 +27,11 @@ Module ownership is listed in `src/LAYERS.md`.
 
 `maps/world.json` is the forest, swamp, river and Pohjola. `rows` is run-length encoding, `count:tile`. Tiles are 0 air, 1 solid, 2 platform, 3 ladder, 4 thorns, 5 water. `extras.blocks` adds optional platforms as `[x, y, w, h, t]` and does not rewrite the first three boss rooms. `maps/vellamo.json` is the later realm in the same block form, on a solid floor at row 20. Leave the boss columns named in that file empty.
 
-Edit the JSON, run `python3 build.py`, then `python3 tests/test_routes.py`.
+Edit the JSON by hand or with the editor, then `python3 tests/test_routes.py`. `python3 build.py` refuses to overwrite an existing `TuonelanPolku<version>.pygame`. A preview from the editor is written to `esikatselu/TuonelanPolku-esikatselu.pygame`.
+
+## Editor
+
+`python3 -m editor` opens the Finnish map editor (Python 3 and pygame). It is a development tool, not part of the one-file game. `editor/KAYTTO.txt` is the Windows guide. The normal brush paints overlay blocks and leaves the base world's run-length rows alone. Closing the window does not save. Saving writes the canonical JSON and keeps the previous file in `maps/backups/`. The editor does not open the game's save or settings.
 
 ## Tests
 

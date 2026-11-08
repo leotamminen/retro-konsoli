@@ -1,0 +1,48 @@
+Kenttäeditori
+
+Käynnistys Windowsissa: kaksoisnapsauta kaynnista.bat
+Käynnistys komentoriviltä, kansion TuonelanPolku sisältä:
+  py -3 -m editor
+
+Kaksi karttaa: Maailma (metsä, suo, joki, Pohjola) ja Vellamo. Tab vaihtaa karttaa.
+
+Hiiri
+- Vasen nappi maalaa, pyyhkii tai lisää sen, mikä työkalu on valittuna.
+- Oikea nappi valitsee lohkon, vihollisen, esineen, nuotion tai areenan reunan.
+- Rulla zoomaa. Keskinäppäin vierittää.
+- Nuolinäppäimet vierittävät. Shift+nuoli siirtää valintaa. Delete poistaa valinnan.
+
+Maasto
+- Maa, taso, vesi, tikkaat ja piikit ovat pelin oikeita ruutuja.
+- Maalaa lohko lisää päällekkäisen lohkon. Perusmaailman tiivistetyt rivit eivät muutu.
+- Pohjajuova kirjoittaa vain sen rivin, jota kosketat.
+- Vellamossa lattiarivi ja sen alapuoli ovat valmiiksi maata. Ilmalla ei puhkota lattiaa.
+- Ehdota tasannetta lisää lyhyen tason tyhjään kohtaan. Siirrä tai poista se itse.
+
+Viholliset ja esineet
+- Vihollinen valitaan listasta. Maailmassa on maan viholliset, Vellamossa veden viholliset.
+- Lista on pelin valmis käytös. Tästä ei kirjoiteta uutta tekoälyä eikä dialogia.
+- Pomot eivät ole spawn-pisteitä. Niiden huoneen vasenta ja oikeaa rajaa siirretään, ja ovi seuraa rajaa.
+- Nuotion paikkaa voi siirtää. Tunnistetta b0–b13 ei poisteta.
+- Uusi esine on sielupussi tai pullo ja saa oman tunnisteen. Olemassa olevaa taikaa voi siirtää, uutta ei luoda, koska pelissä ei ole sille tekstiä.
+- Vipuja ja salaportteja ei muokata. Ne näkyvät kartalla.
+
+Tallennus
+- Ctrl+S tallentaa maps/world.json tai maps/vellamo.json.
+- Edellinen tiedosto kopioidaan kansioon maps/backups ennen korvausta.
+- Ikkunan sulkeminen ja Ctrl+Q eivät tallenna.
+- Virheellinen kartta ei kirjoita tiedostoa.
+- Editori ei avaa eikä kirjoita pelin tallennusta tai asetuksia.
+
+Esikatselu
+- Esikatsele peli rakentaa tiedoston esikatselu/TuonelanPolku-esikatselu.pygame.
+- Se ei korvaa TuonelanPolku1.3.5.pygame eikä vanhempia julkaisuja.
+- Tallenna kartta ennen esikatselua. Esikatselu käyttää viimeksi tallennettua JSONia.
+
+Esimerkki
+1. Avaa maailma. Vieritä nuolilla metsän maahan.
+2. Valitse Taso ja maalaa lyhyt silta ilmaan.
+3. Valitse peikko ja napsauta tyhjää ruutua sen lähelle.
+4. Valitse merkki ja siirrä se Shift+nuolella.
+5. Ctrl+Z peruu vedon. Ctrl+S tallentaa varmuuskopion kanssa.
+6. Esikatsele peli kirjoittaa erillisen tiedoston, jonka voi avata pygame-ohjelmana.
