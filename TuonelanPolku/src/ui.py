@@ -182,10 +182,19 @@ class GameUI:
     def new_game_flow(s):
         s.cs_who = 0; s.cs_pad = s.last_pad; s.cs_i = 0; s.state_name = "class"
     def begin_session(s, save):
-        save=save.copy()
-        if save.get("louhi_unlocked") or save.get("done") or "tytti" in save.get("bosses",[]):
-            if "b9" not in save["seen"]:save["seen"].append("b9")
-            save["bonfire"]="b9";save["louhi_unlocked"]=True;write_save(save)
+        save=dict(save)
+        save["seen"]=list(save.get("seen") or [])
+        save["bosses"]=list(save.get("bosses") or [])
+        save["opened"]=list(save.get("opened") or [])
+        louhi = "louhi" in save["bosses"]
+        if louhi and save.get("bonfire") not in ("b10", "b11", "b12", "b13"):
+            # 1.3.4 wrote b9 here after every Louhi clear, then hid the gate once Vellamo had been seen.
+            save["bonfire"]="b10"; save["vellamo_unlocked"]=True; save["louhi_unlocked"]=True
+            if "b10" not in save["seen"]: save["seen"].append("b10")
+            write_save(save)
+        elif (not louhi) and (save.get("louhi_unlocked") or save.get("done") or "tytti" in save["bosses"]):
+            if "b9" not in save["seen"]: save["seen"].append("b9")
+            save["bonfire"]="b9"; save["louhi_unlocked"]=True; write_save(save)
         s.pending = save; s.pend_pad = s.last_pad or next(iter(s.pads.values())); s.state_name = "loading"
     def open_pause(s):
         s.state_name = "pause"; s.menu_i["pause"] = 0; sfx("select", 0.6)
@@ -625,30 +634,74 @@ class GameUI:
         return bool(r["ok"])
     def start_ending(s):
         s.save["done"]=True;s.save["louhi_unlocked"] = "louhi" in s.save["bosses"];s.save_game()
-        s.state_name="ending";s.end_page=0;s.end_t=0;s._arm_cut();MUSIC.request("title")
+        s.state_name="ending";s.end_page=0;s.end_t=0;s.scare=False;s._arm_cut();MUSIC.request("title")
     def up_ending(s):
         r=s.menu_in();s.end_t+=1
-        if s._fresh_ok(r) and s.end_t>45:s.end_page+=1;s.end_t=0;s._arm_cut()
-        if s.end_page==1 and s.end_t>150 and "louhi" not in s.save["bosses"]:
-            s.state_name="interrupt";s.interrupt_t=0;s._arm_cut()
-        elif s.end_page>=4:s.enter_pohjola(s.save)
+        last = s.end_page >= 3
+        if last:
+            # The last card cannot be skipped. The scare starts exactly two seconds in.
+            if s.end_t >= 120 and "louhi" not in s.save.get("bosses", []):
+                s._begin_scare()
+            return
+        if s._fresh_ok(r) or s.end_t >= 300:
+            s.end_page += 1; s.end_t = 0; s._arm_cut()
     def dr_ending(s):
         c=s.canvas;c.fill((6,6,12));fs=fog_surface("river");t=s.t_ui;fx=-int(t*.3)%640;c.blit(fs,(fx-640,60));c.blit(fs,(fx,60))
-        pg=s.end_page;f=min(1,s.end_t/50)
+        pg=s.end_page;f=min(1,s.end_t/20)
         if pg<3:
             lines=wrap(s.font,tr("end_%d"%pg),260)
             for i,line in enumerate(lines):s.text(line,160,70+i*15-len(lines)*6,tuple(int(v*f) for v in (225,215,190)))
         else:s.text(tr("end_title"),160,70,tuple(int(v*f) for v in (255,225,150)),s.big);s.text(tr("end_thanks"),160,112,(190,200,190))
+    def _capture_shatter(s):
+        src = s.canvas.copy()
+        pieces = []
+        cols, rows = 8, 5
+        pw, ph = W // cols, H // rows
+        for gy in range(rows):
+            for gx in range(cols):
+                rect = pygame.Rect(gx * pw, gy * ph, pw, ph)
+                piece = src.subsurface(rect).copy()
+                cx, cy = rect.centerx - W / 2, rect.centery - H / 2
+                pieces.append([piece, float(rect.x), float(rect.y), cx * 0.045 + random.uniform(-0.4, 0.4), cy * 0.045 - 0.6])
+        s.shatter = pieces
+    def _begin_scare(s):
+        s.scare = True
+        s.state_name = "interrupt"
+        s.interrupt_t = 0
+        s._capture_shatter()
+        sfx("shatter", 1.0)
+        try:
+            if MUSIC.cur and MUSIC.cur in MUSIC.tracks:
+                MUSIC.tracks[MUSIC.cur].set_volume(MUSIC.volume() * 0.15)
+        except Exception:
+            pass
+        if SETTINGS.get("shake", True):
+            s.shk_amp = 9; s.shk_t = 36
     def up_interrupt(s):
-        r=s.menu_in();s.interrupt_t+=1
-        if s.interrupt_t>200 or (s.interrupt_t>160 and s._fresh_ok(r)):s.enter_pohjola(s.save)
+        s.menu_in()
+        s.interrupt_t += 1
+        if s.shk_t > 0: s.shk_t -= 1
+        if s.interrupt_t > 150:
+            s.shatter = None
+            s.enter_pohjola(s.save)
     def dr_interrupt(s):
-        c=s.canvas
-        c.fill((7,3,12))
-        spr=louhi_frame("windup",s.interrupt_t//6,phase=3)
-        c.blit(spr,(160-spr.get_width()//2,78-spr.get_height()//2))
-        if s.interrupt_t<170:s.text(tr("louhi_intro"),160,156,(225,122,131),s.font)
-        else:c.fill((0,0,0))
+        c = s.canvas
+        t = s.interrupt_t
+        c.fill((8, 0, 0) if t < 6 else (0, 0, 0))
+        if t < 5:
+            c.fill((255, 245, 230))
+        pieces = getattr(s, "shatter", None) or []
+        for piece, x, y, vx, vy in pieces:
+            piece.set_alpha(max(0, 255 - t * 3))
+            c.blit(piece, (int(x + vx * t * 0.55), int(y + vy * t * 0.55 + t * t * 0.012)))
+        if 4 <= t <= 50:
+            for i in range(1, 8):
+                pygame.draw.line(c, (255, 236, 210), (i * W // 8, 0), (i * W // 8 + t, H), 1)
+                pygame.draw.line(c, (255, 236, 210), (0, i * H // 5), (W, i * H // 5 + t // 2), 1)
+        spr = louhi_frame("windup", min(t, 12), phase=3)
+        c.blit(spr, (160 - spr.get_width() // 2, 78 - spr.get_height() // 2))
+        if t < 140:
+            s.text(tr("louhi_intro"), 160, 156, (255, 80, 70), s.font)
     def up_poht(s):
         s.poht_t+=1
         if s.poht_t==40:MUSIC.request("pohjola")

@@ -2,8 +2,9 @@
 # ---------------- game core: session, world state, combat resolution, camera, world drawing ----------------
 _VELLAMO_GATE=(454*16+8, 320)
 def _gate_unlocked(s):
+    """After Louhi falls the Pohjola gate stays usable, even if Vellamo was already entered."""
     sv=s.save or {}
-    return "louhi" in sv.get("bosses", []) and not sv.get("vellamo_visited")
+    return "louhi" in sv.get("bosses", [])
 MAP_CW, MAP_CH = 20, 11          # fog-of-war cell size in tiles
 def map_cell(tx, ty): return "%d,%d" % (int(tx) // MAP_CW, max(0, int(ty)) // MAP_CH)
 BF_START = {"b0": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0, "b5": 0, "b6": 10, "b7": 37, "b8": 2, "b9": 0}
@@ -91,11 +92,34 @@ class GameCore:
     def save_game(s):
         if s.save is None: return False
         sv = s.save
+        s._capture_party()
         sv["time"] = int((s.t0 + s.frames) // 60); sv["level"] = 1 + sum(sv["stats"].values())
-        sv["p2"] = s.players[1].ch if len(s.players) > 1 else sv.get("p2")
-        if sv["p2"]: sv["p2"]["level"] = 1 + sum(sv["p2"]["stats"].values())
         sv["stain"] = s.stains; sv["mapseen"] = sorted(s.mapseen)
         return write_save(sv)
+    def _capture_party(s):
+        """Write both characters into the save. P1 lives on the save dict; P2 is nested."""
+        sv = s.save
+        if not sv or not s.players: return
+        p = s.players[0]
+        sv["cls"] = p.cls
+        sv["stats"] = {k: int(p.ch["stats"].get(k, 0)) for k in STAT_KEYS}
+        sv["souls"] = int(p.souls)
+        sv["level"] = 1 + sum(sv["stats"].values())
+        if len(s.players) > 1:
+            q = s.players[1]
+            stats = {k: int(q.ch["stats"].get(k, 0)) for k in STAT_KEYS}
+            sv["p2"] = {"cls": q.cls, "stats": stats, "souls": int(q.souls), "level": 1 + sum(stats.values())}
+    def _seal_louhi(s):
+        """Louhi's fall is saved at once. No bonfire rest is required, and NG+ stays manual."""
+        sv = s.save
+        if "louhi" not in sv["bosses"]: sv["bosses"].append("louhi")
+        sv["done"] = True
+        sv["louhi_unlocked"] = True
+        sv["vellamo_unlocked"] = True
+        s.wd.set_open("d_vellamo", True)
+        if "d_vellamo" not in sv["opened"]: sv["opened"].append("d_vellamo")
+        s._capture_party()
+        s.save_game()
     def p2_char(s, cls):
         sv = s.save; p1lvl = 1 + sum(sv["stats"].values())
         ch = sv.get("p2")
@@ -199,9 +223,8 @@ class GameCore:
             sv["louhi_unlocked"]=True
             s.ending_t=1;s.save_game()
         elif k=="louhi":
-            sv["done"]=True; sv["vellamo_unlocked"]=True
-            s.wd.set_open("d_vellamo", True)
-            s.save_game(); s.ending_t=0; s.end_t=0; s.true_end_delay=1
+            s._seal_louhi()
+            s.ending_t=0; s.end_t=0; s.true_end_delay=1
             s.msg(tr("vel_sign"), (160,240,210))
         elif k=="vellamo":
             sv["aino_freed"]=True; sv["vellamo_done"]=True; sv["ng_ready"]=True
@@ -395,7 +418,8 @@ class GameCore:
                     x, y = (p.x, p.y) if (p.on_ground and s.safe_ok(p)) else p.safe
                     s.stains.append({"p": p.idx, "x": float(x), "y": float(y), "souls": p.souls}); p.souls = 0
     def respawn(s):
-        if s.players and 446*TILE<=s.players[0].x<486*TILE:s.save["bonfire"]="b9"
+        if s.players and 446*TILE<=s.players[0].x<486*TILE and s.save.get("bonfire") not in ("b10", "b11", "b12", "b13"):
+            s.save["bonfire"]="b9"
         sv = s.save; bx, by = bonfire_pos(sv["bonfire"])
         s.reset_boss()
         for i, p in enumerate(s.players):

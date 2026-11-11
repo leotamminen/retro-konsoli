@@ -9,7 +9,16 @@ def act(p,key,frames=1):
     p.nextc=None
 #Original boss combat ending handoff test.
 g=new_game();start(g,bonfire='b8');g.start_boss('tytti');g.boss.invuln=False;g.boss.hp=0;g.boss.take(99999,pl=g.players[0]);g.ending_t=260;step(g,1);ok(g.state_name=='ending','Tytti fake ending starts')
-step(g,70);act(g.last_pad,'jump');step(g,160);ok(g.state_name=='interrupt','Louhi interrupts during original ending text');shot(g,'12_louhi_interrupt');step(g,210);ok(g.state_name=='poht','black screen follows interrupt')
+step(g,299);ok(g.end_page==0 and g.state_name=='ending','first text stays for five seconds')
+step(g,1);ok(g.end_page==1,'text advances on its own after five seconds')
+act(g.last_pad,'jump');step(g,1);ok(g.end_page==2,'a fresh X advances one screen')
+act(g.last_pad,'jump');step(g,1);ok(g.end_page==3 and g.state_name=='ending','last screen is not yet the scare')
+for _ in range(4):
+    act(g.last_pad,'jump');step(g,1)
+step(g,80);ok(g.state_name=='ending','the scare cannot be skipped')
+step(g,40);ok(g.state_name=='interrupt','scare starts two seconds into the last screen')
+g.draw();shot(g,'12_louhi_interrupt');step(g,40);ok(g.state_name=='interrupt','scare stays through a press')
+step(g,130);ok(g.state_name=='poht','Pohjola follows the scare')
 step(g,45);shot(g,'12_pohjola_dark');step(g,75);ok(g.state_name=='play' and g.save['bonfire']=='b9','Pohjola spawns at immediate checkpoint')
 p=g.last_pad=g.players[0].pad;p.idx=-1
 for i in range(500):

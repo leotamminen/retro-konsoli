@@ -160,6 +160,12 @@ def sanitize_save(d, valid_bonfires=None, valid_ids=None):
     s["ng_ready"] = bool(d.get("ng_ready", False)) or bool(d.get("vellamo_done", False)) or s["ng"] > 0
     s['vellamo_unlocked'] = "louhi" in s["bosses"]
     s['vellamo_visited'] = bool(d.get('vellamo_visited', False)) and s['vellamo_unlocked']
+    # 1.3.4–1.3.6 Continue rewrote the bonfire to Pohjola after Louhi and then hid the gate.
+    # A defeated Louhi continues at the last Vellamo bonfire, or at the realm entrance.
+    if "louhi" in s["bosses"] and s["bonfire"] not in ("b10", "b11", "b12", "b13"):
+        s["bonfire"] = "b10"
+        if "b10" not in s["seen"]: s["seen"].append("b10")
+        s["louhi_unlocked"] = True
     s['aino_freed'] = bool(d.get('aino_freed', False)) and "aino" in s["bosses"]
     s['vellamo_done'] = bool(d.get('vellamo_done', False)) and "vellamo" in s["bosses"]
     if s["vellamo_done"]: s["ng_ready"] = True

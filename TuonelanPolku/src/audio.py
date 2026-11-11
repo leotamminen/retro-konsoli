@@ -111,6 +111,7 @@ def build_sfx():
     reg("gate", smix(tone(70, 50, 0.9, 0.4, "noise", lp=0.08, dpow=0.7), tone(55, 45, 0.9, 0.35, "saw", lp=0.1, dpow=0.7)))
     reg("pickup", smix(tone(660, 990, 0.2, 0.2, "sine"), tone(990, 1320, 0.35, 0.18, "sine")))
     reg("boom", smix(tone(80, 30, 0.5, 0.55, "sine", dpow=1.2), tone(120, 40, 0.5, 0.4, "noise", lp=0.1, dpow=1.2)))
+    reg("shatter", smix(tone(70, 22, 0.62, 0.85, "sine", dpow=1.05), tone(180, 30, 0.45, 0.7, "noise", lp=0.06, dpow=0.7), tone(48, 18, 0.7, 0.55, "sine", dpow=1.3)))
     reg("roar", smix(tone(90, 55, 1.1, 0.4, "saw", lp=0.08, dpow=0.6), tone(130, 60, 1.1, 0.3, "noise", lp=0.1, dpow=0.6)))
     reg("warn", tone(1000, 1000, 0.05, 0.12, "tri"))
     reg("splash", tone(600, 200, 0.2, 0.18, "noise", lp=0.2))

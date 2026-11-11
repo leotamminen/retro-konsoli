@@ -6,7 +6,7 @@ Edit `src/` and `maps/`. Do not hand-edit a generated `TuonelanPolku*.pygame`. T
 
 ## Version
 
-`version.json` is the only version. `build.py` embeds that string once and names the release `TuonelanPolku<version>.pygame`. The title reads the same value. Source modules do not assign `VERSION`. The current source builds 1.3.6. `TuonelanPolku1.3.5.pygame` and `TuonelanPolku1.3.4.pygame` stay as they were. The editor version is separate and shown in the editor window.
+`version.json` is the only version. `build.py` embeds that string once and names the release `TuonelanPolku<version>.pygame`. The title reads the same value. Source modules do not assign `VERSION`. The current source builds 1.3.7. `TuonelanPolku1.3.4.pygame`, `TuonelanPolku1.3.5.pygame` and `TuonelanPolku1.3.6.pygame` stay as they were. The editor version is separate and shown in the editor window.
 
 ## Build
 

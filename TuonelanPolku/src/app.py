@@ -93,7 +93,7 @@ class Game(GameCore, GameUI):
             bw = 100; pygame.draw.rect(c, (0, 0, 0), (W // 2 - bw // 2, 4, bw, 12)); pygame.draw.rect(c, (255, 255, 255), (W // 2 - bw // 2 - 1, 3, bw + 2, 14), 1)
             pygame.draw.rect(c, (230, 60, 60), (W // 2 - bw // 2 + 1, 5, min(bw - 2, int((bw - 2) * s.quit_hold / 60)), 10)); s.text(tr("quitting"), W // 2, 10)
         ox = oy = 0
-        if s.shk_t > 0 and SETTINGS["shake"] and s.state_name == "play":
+        if s.shk_t > 0 and SETTINGS["shake"] and s.state_name in ("play", "interrupt"):
             a = s.shk_amp * min(1.0, s.shk_t / 8.0); ox = int(random.uniform(-a, a)); oy = int(random.uniform(-a, a))
         if ox or oy: s.screen.fill((0, 0, 0))
         s.screen.blit(c, (ox, oy))
