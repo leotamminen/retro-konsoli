@@ -761,15 +761,14 @@ class GameCore:
             if room_r - room_l <= W:
                 tx = room_l - 8
             else:
+                xs = [p.x for p in alive]
                 if s.boss is not None and not s.boss.dead:
-                    left = min(mx - 12, s.boss.x - 40)
-                    right = max(mx + 12, s.boss.x + 40)
+                    xs.append(s.boss.x)
+                left, right = min(xs) - margin, max(xs) + margin
+                if right - left <= W:
+                    tx = left
                 else:
-                    left, right = mx - 20, mx + 20
-                if right - left <= W - 2 * margin:
-                    tx = left - margin
-                else:
-                    tx = (left + right) * 0.5 - W * 0.5
+                    tx = (min(xs) + max(xs)) * 0.5 - W * 0.5
                 tx = max(room_l, min(room_r - W, tx))
         tx = max(0, min(COLS * TILE - W, tx)); ty = max(0, min(ROWS * TILE - H, ty))
         return tx, ty
@@ -900,6 +899,10 @@ class GameCore:
             for x in (-12,77,198,281):
                 y=124+int(math.sin(x*.07+t*.04)*3)+tide//2
                 pygame.draw.arc(c,(65,127,146),(x,y,18,6),.15,2.9,1)
+            if s.arena=="ahti":
+                wy=int(ARENAS["ahti"]["ground"]*TILE-92-tide-cy)
+                if -2 < wy < H:
+                    pygame.draw.line(c,(150,210,220),(0,wy),(W,wy),1)
         if _gate_unlocked(s) and area=="pohjola":
             x=int(_VELLAMO_GATE[0]-s.cam[0]); y=int(_VELLAMO_GATE[1]-s.cam[1])
             pygame.draw.rect(c,(35,116,133),(x-8,y-43,16,43),1)

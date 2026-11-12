@@ -378,6 +378,11 @@ class Player(Body):
         for cx, cy, cw, ch, dire in CURRENTS:
             if cx <= tx < cx + int(cw) and cy <= ty < cy + int(ch):
                 s.vx += 0.07 if dire >= 0 else -0.07
+        boss = g.boss if isinstance(g, GameCore) else None
+        if boss is not None and boss.key == "ahti" and not boss.dead and boss.phase >= 2 and s.y > boss.gy - 20:
+            direction = boss.flow if getattr(boss, "flow", 0) else (1 if (g.frames // 110) % 2 == 0 else -1)
+            s.vx += 0.42 * direction
+            move_body(g.wd, s)
         if "jump" in ev: sfx("jump", 0.5); g.parts.burst(s.x, s.y, (200, 200, 190), 3, 0.6, 10, 1, 0.0)
         if "djump" in ev: sfx("djump", 0.6); g.parts.burst(s.x, s.y, (190, 230, 255), 8, 1.0, 14, 1, 0.0)
         if "land" in ev: sfx("land", 0.4)

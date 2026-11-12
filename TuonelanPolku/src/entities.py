@@ -322,7 +322,12 @@ class Enemy(Body):
                 fk = ("flip", s.key, getattr(s, "vb", "idle"), max(1, min(3, round(s.phase))), s.t % 4)
                 if fk not in _BSPR: _BSPR[fk] = pygame.transform.flip(spr, True, False)
                 spr = _BSPR[fk]
-            surf.blit(spr, (int(s.x - cx - spr.get_width() // 2), int(s.y - cy - spr.get_height())))
+            bx = int(s.x - cx - spr.get_width() // 2)
+            by = int(s.y - cy - spr.get_height())
+            surf.blit(spr, (bx, by))
+            if s.warn > 0 and s.warn_t < 14:
+                pygame.draw.rect(surf, (255, 60, 50), (int(s.x - cx) - 1, by - 8, 3, 5))
+                pygame.draw.rect(surf, (255, 60, 50), (int(s.x - cx) - 1, by - 2, 3, 2))
             return
         if s.hidden: return
         spr = s.sprite(); w, h = spr.get_size()

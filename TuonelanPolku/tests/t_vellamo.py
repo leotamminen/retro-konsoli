@@ -52,17 +52,28 @@ for bid in ('b10','b11','b12','b13'):
 # Boss render, invoke every individual branch, test music names and phases.
 for key,bf in [('joukahainen','b10'),('ahti','b11'),('aino','b12'),('vellamo','b13')]:
  g,p=fresh(bf);g.start_boss(key);step(g,75,True)
- for act in ({'joukahainen':['runes','bog','crossbow','frost'],'ahti':['wave','current','beasts','trident','tide'],'aino':['fin','drop','stream','memory','transform'],'vellamo':['lattice','crown','undertow','cage','erasure']}[key]):
-  g.boss.invuln=False;g.boss.gen=None;g.boss.phase=3 if key in ('aino','vellamo') else 2;g.boss._last=[act];g.boss.pick=lambda opts,act=act:act
+ for act in ({'joukahainen':['verse','bog','leap','frost'],'ahti':['dive','charge','geyser','current'],'aino':['arc','drop','stream','frost'],'vellamo':['lattice','crown','cage','cross']}[key]):
+  g.dying=0;g.state_name='play'
+  for q in g.players:
+   q.hp=q.maxhp;q.state='free';q.inv=0
+  g.boss.invuln=False;g.boss.gen=None;g.boss.phase=2;g.boss.hold=False;g.boss.flow=0;g.boss.stun=0;g.boss._last=[act];g.boss.pick=lambda opts,act=act:act
   g.projs=[];g.zones=[];it=getattr(g.boss,key[:3])+'' if False else None
   ita={'joukahainen':'jous','ahti':'aht','aino':'ain','vellamo':'vel'}[key]
-  g.boss.gen=getattr(g.boss,ita)();step(g,75,False)
-  ok(bool(g.projs or g.zones or act in ('bog','current','undertow')),key+' action '+act)
+  g.boss.gen=getattr(g.boss,ita)()
+  seen=False
+  for _ in range(100):
+   step(g,1,False)
+   if g.projs or g.zones or g.boss.atk:
+    seen=True;break
+  ok(seen,key+' action '+act)
   g.draw();shot(g,'v13_'+key+'_'+act,2)
- g.boss.invuln=False;g.boss.hp=g.boss.maxhp*.51
- for i in range(1 if key in ("joukahainen","ahti") else 2):
-  g.boss.gen=None;step(g,102,False);ok(int(g.boss.phase)>=i+2,key+' phase '+str(i+2))
- g.boss.hp=max(1,g.boss.maxhp*.2);g.boss.gen=None;g.boss.phase=2 if key in ('joukahainen','ahti','aino') else 3
+ g.dying=0;g.state_name='play';g.projs=[];g.zones=[]
+ for q in g.players:
+  q.hp=q.maxhp;q.state='free';q.inv=90
+ g.boss.phase=1;g.boss.hp=g.boss.maxhp*0.5;g.boss.invuln=False;g.boss.gen=None;g.boss.stun=0;g.boss.hold=False
+ step(g,90,False);ok(g.boss.phase==2,key+' one phase at half')
+ g.boss.hp=g.boss.maxhp*0.2;g.boss.gen=None;step(g,40,False);ok(g.boss.phase==2,key+' no quarter phase')
+ g.boss.hp=max(1,g.boss.maxhp*.2);g.boss.gen=None;g.boss.phase=2
  g.boss.invuln=False;g.boss.take(40);g.boss.hp=1;g.boss.take(100000)
  ok(g.state_name=='aino_reveal' if key=='aino' else g.felled is not None,key+' defeat transition ('+g.state_name+')')
 # co-op calm/reveal/final retry/ending pad actions.
