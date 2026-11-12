@@ -1,0 +1,18 @@
+Tuonelan polun kenttäeditori
+
+Tarvitaan:
+- Python 3.10 tai uudempi
+- pygame 2 (kehityksessä pygame 2.6)
+
+Ei selainta, ei tiliä, ei numpyä eikä muita kirjastoja.
+Pelin julkaistu yhden tiedoston versio ei sisällä editoria, eikä editoria tarvita Piillä.
+
+Windows:
+1. Asenna Python 3 osoitteesta https://www.python.org/
+   Valitse asennuksessa "Add python.exe to PATH".
+2. Avaa komentokehote ja asenna pygame itse:
+   py -3 -m pip install pygame
+3. Kaksoisnapsauta kaynnista.bat
+
+kaynnista.bat ei asenna Pythonia eikä pygamea. Jos jompikumpi puuttuu, ikkuna jää auki ja kertoo sen.
+Kansion polussa saa olla välilyöntejä.

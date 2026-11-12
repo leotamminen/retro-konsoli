@@ -1,0 +1,50 @@
+Kenttäeditori
+
+Käynnistys Windowsissa: kaksoisnapsauta kaynnista.bat
+Käynnistys komentoriviltä, kansion TuonelanPolku sisältä:
+  py -3 -m editor
+
+Kaksi karttaa: Maailma (metsä, suo, joki, Pohjola) ja Vellamo. Tab vaihtaa karttaa.
+
+Editorin versio näkyy ikkunan yläreunassa. Se ei ole sama numero kuin peli.
+
+Hiiri
+- Valitse-tila on oletus. Vasen napsautus valitsee ruudun, lohkon, vihollisen, esineen, nuotion tai pomohuoneen.
+- Keltainen kehys ja alareunan keltainen teksti kertovat, mikä on valittuna.
+- Delete-näppäin ja painike Poista valittu poistavat valinnan. Jos poistaminen on kielletty, alareuna kertoo syyn.
+- Maalaa ja Pyyhi muotoilevat näkyvän maan, myös Vellamon lattian. Kuoppa, porras ja korotus ovat tavallisia ruutuja.
+- Rulla zoomaa. Keskinäppäin vierittää.
+- Nuolinäppäimet vierittävät. Shift+nuoli siirtää valintaa.
+
+Pomohuone
+- Tyhjä keskusta valitsee koko huoneen. Raahaus siirtää huoneen, oven, pomon syntypaikan ja kameran.
+- Reunojen kahvat muuttavat kokoa. Viholliset, esineet ja maasto eivät liiku huoneen mukana.
+- Pomohuonetta ja nuotion tunnistetta ei voi poistaa. Niitä voi siirtää.
+
+Viholliset ja esineet
+- Vihollinen valitaan listasta. Maailmassa on maan viholliset, Vellamossa veden viholliset.
+- Lista on pelin valmis käytös. Tästä ei kirjoiteta uutta tekoälyä eikä dialogia.
+- Pomot eivät ole spawn-pisteitä. Niiden huoneen vasenta ja oikeaa rajaa siirretään, ja ovi seuraa rajaa.
+- Nuotion paikkaa voi siirtää. Tunnistetta b0–b13 ei poisteta.
+- Uusi esine on sielupussi tai pullo ja saa oman tunnisteen. Olemassa olevaa taikaa voi siirtää, uutta ei luoda, koska pelissä ei ole sille tekstiä.
+- Vipuja ja salaportteja ei muokata. Ne näkyvät kartalla.
+
+Tallennus
+- Ctrl+S tallentaa maps/world.json tai maps/vellamo.json.
+- Edellinen tiedosto kopioidaan kansioon maps/backups ennen korvausta.
+- Ikkunan sulkeminen ja Ctrl+Q eivät tallenna.
+- Virheellinen kartta ei kirjoita tiedostoa.
+- Editori ei avaa eikä kirjoita pelin tallennusta tai asetuksia.
+
+Esikatselu
+- Esikatsele peli rakentaa tiedoston esikatselu/TuonelanPolku-esikatselu.pygame.
+- Siinä on muokattu kartta ja tämän editorin tarvitsema pelituki. TuonelanPolku1.3.5.pygame jää ennalleen.
+- Tallenna kartta ennen esikatselua. Editori ei tallenna karttaa avatessa.
+
+Esimerkki
+1. Avaa maailma. Vieritä nuolilla metsän maahan.
+2. Valitse Taso ja maalaa lyhyt silta ilmaan.
+3. Valitse peikko ja napsauta tyhjää ruutua sen lähelle.
+4. Valitse merkki ja siirrä se Shift+nuolella.
+5. Ctrl+Z peruu vedon. Ctrl+S tallentaa varmuuskopion kanssa.
+6. Esikatsele peli kirjoittaa erillisen tiedoston, jonka voi avata pygame-ohjelmana.
