@@ -5,6 +5,7 @@ class World:
         s.g = GRID
         s.state = {k: d["active"] for k, d in DYN.items()}
         s.dmap = {}
+        s.gone = {}
         s._rebuild()
     def _rebuild(s):
         s.dmap = {}
@@ -23,6 +24,7 @@ class World:
     def tile(s, tx, ty):
         if tx < 0 or tx >= COLS or ty >= ROWS: return SOLID
         if ty < 0: return SOLID if (tx, ty) not in s.dmap else AIR
+        if (tx, ty) in s.gone: return AIR
         v = s.dmap.get((tx, ty))
         return s.g[ty][tx] if v is None else v
     def solid(s, tx, ty): return s.tile(tx, ty) == SOLID

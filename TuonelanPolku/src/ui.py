@@ -4,7 +4,7 @@ _ESC = [False]
 def ks_quit():
     v = _ESC[0]; _ESC[0] = False; return v
 
-BF_KEYS = {"b0": "bf_b0", "b1": "bf_b1", "b2": "bf_b2", "b3": "bf_b3", "b4": "bf_b4", "b5": "bf_b5", "b6": "bf_b6", "b7": "bf_b7", "b8": "bf_b8", "b9": "bf_b9", "b10": "bf_b10", "b11": "bf_b11", "b12": "bf_b12", "b13": "bf_b13"}
+BF_KEYS = {"b0": "bf_b0", "b1": "bf_b1", "b2": "bf_b2", "b3": "bf_b3", "b4": "bf_b4", "b5": "bf_b5", "b6": "bf_b6", "b7": "bf_b7", "b8": "bf_b8", "b9": "bf_b9", "b10": "bf_b10", "b11": "bf_b11", "b12": "bf_b12", "b13": "bf_b13", "b14": "bf_b14"}
 # glyph tables: action -> (label, color, shape)
 GLYPHS = {
     "ps": {"jump": ("x", (110, 160, 255), "cross"), "dodge": ("o", (255, 100, 110), "circle"), "light": ("s", (240, 140, 220), "square"),
@@ -731,7 +731,7 @@ class GameUI:
     def up_aino_reveal(s):
         result = s.menu_in(); s.reveal_t += 1
         if (result["ok"] and s.reveal_t > 1) or s.reveal_t > 240:
-            s.state_name = "play"; s.start_boss("vellamo")
+            s.state_name = "play"
     def dr_aino_reveal(s):
         draw_reveal(s)
     def up_vellamo_ending(s):

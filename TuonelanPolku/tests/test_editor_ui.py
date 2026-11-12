@@ -67,7 +67,7 @@ def body(tmp):
     app.draw()
     vellamo_png = Path("/tmp/editori_vellamo.png")
     app.save_png(vellamo_png)
-    water = app.cell_to_screen(528, 19)
+    water = app.cell_to_screen(536, 17)
     sample = screen.get_at((int(water[0]) + 2, int(water[1]) + 2))
     req(sample[2] > 80, "Vellamo screenshot shows the pool")
     req(vellamo_png.stat().st_size > 8000, "vellamo screenshot file")

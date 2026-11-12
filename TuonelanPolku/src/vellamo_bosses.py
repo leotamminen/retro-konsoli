@@ -39,13 +39,14 @@ class Joukahainen(WaterBoss):
         opts=['runes','bog','crossbow'] if s.phase<2 else ['runes','bog','crossbow','frost']
         s.actname=s.pick([(o,1) for o in opts])
         if s.actname=='runes':
-            yield from s.tell(40)
-            for j in range(5):
-                for y in (250,277,304):s.shoot('verse',s.x-20,y,-2.0 if s.g.players[0].x<s.x else 2.0,0,22,curve=.008 if s.phase>=2 else 0)
-                yield from s.wait(8)
+            yield from s.tell(55)
+            side=-1.55 if s.g.players and s.g.players[0].x<s.x else 1.55
+            for j in range(4):
+                for off in (-26,-86):s.shoot('verse',s.x-20,s.gy+off,side,0,18)
+                yield from s.wait(16)
         elif s.actname=='bog':
             yield from s.tell(48);t=s.mid_target()
-            if t:s.g.zones.append(Zone(t.x,320,48,14,28,180,12*D()['dmg'],'bog',0))
+            if t:s.g.zones.append(Zone(t.x,s.gy,48,14,28,180,12*D()['dmg'],'bog',0))
             yield from s.wait(75)
         elif s.actname=='crossbow':
             yield from s.tell(29);t=s.mid_target();a=-math.pi
@@ -55,7 +56,7 @@ class Joukahainen(WaterBoss):
             yield from s.wait(22)
         else:
             yield from s.tell(50)
-            for j in range(4):s.g.zones.append(Zone(s.L+40+j*70,320,24,140,30+j*13,20,32*D()['dmg'],'frost',2.4))
+            for j in range(4):s.g.zones.append(Zone(s.L+40+j*70,s.gy,24,140,30+j*13,20,24*D()['dmg'],'frost',2.4))
             yield from s.wait(32)
 class Ahti(WaterBoss):
     def __init__(s,g,x,y):WaterBoss.__init__(s,g,'ahti',x,y)
@@ -65,27 +66,27 @@ class Ahti(WaterBoss):
         if s.actname=='wave':
             yield from s.tell(40)
             for side in (-1,1):
-                for i in range(6):s.shoot('swell',s.x,320-i*9,side*2.2,-.13,28,curve=.004)
+                for off in (-8,-78):s.shoot('swell',s.x,s.gy+off,side*1.8,-.08,22,curve=.004)
             yield from s.wait(28)
         elif s.actname=='current':
             yield from s.tell(48);direction=random.choice((-1,1))
             for i in range(125):
                 for p in s.g.players:
                     if p.alive() and p.state not in ('roll','hurt'):p.vx=max(-2.8,min(2.8,p.vx+direction*.09))
-                if i%12==0:s.shoot('bubble',random.uniform(s.L,s.R),318,-direction*.5,-.5,18,life=130)
+                if i%18==0:s.shoot('bubble',random.uniform(s.L,s.R),s.gy-6,-direction*.4,-.35,16,life=110)
                 yield
             yield from s.wait(18)
         elif s.actname=='beasts':
             yield from s.tell(52)
-            for dx in (-92,62):s.g.zones.append(Zone(max(s.L,min(s.R,s.x+dx)),320,27,90,20,23,27*D()['dmg'],'tentacle',2.7))
+            for dx in (-92,62):s.g.zones.append(Zone(max(s.L,min(s.R,s.x+dx)),s.gy,27,90,20,23,22*D()['dmg'],'tentacle',2.7))
             yield from s.wait(38)
         elif s.actname=='trident':
             yield from s.tell(38)
-            for x in [s.L+35,s.L+95,s.L+155,s.L+215,s.R-22]:s.g.zones.append(Zone(x,320,22,113,18,25,37*D()['dmg'],'tidepike',2))
+            for x in [s.L+35,s.L+95,s.L+155,s.L+215,s.R-22]:s.g.zones.append(Zone(x,s.gy,22,113,18,25,26*D()['dmg'],'tidepike',2))
             yield from s.wait(24)
         else:
             yield from s.tell(44)
-            for x in range(int(s.L+28),int(s.R),50):s.g.zones.append(Zone(x,315,29,180,10,150,22*D()['dmg'],'tentacle',2.6))
+            for x in range(int(s.L+28),int(s.R),50):s.g.zones.append(Zone(x,s.gy,29,180,10,150,18*D()['dmg'],'tentacle',2.6))
             yield from s.wait(30)
 class Aino(WaterBoss):
     def __init__(s,g,x,y):WaterBoss.__init__(s,g,'aino',x,y)
@@ -102,16 +103,16 @@ class Aino(WaterBoss):
             yield from s.wait(23);s.vb='maiden'
         elif s.actname=='drop':
             yield from s.tell(43);t=s.mid_target()
-            if t:s.shoot('memory',t.x,110,0,.7,32,curve=.014,col=(192,181,231))
+            if t:s.shoot('memory',t.x,s.gy-200,0,.7,22,curve=.014,col=(192,181,231))
             yield from s.wait(40)
         elif s.actname=='stream':
-            yield from s.tell(34)
+            yield from s.tell(50)
             for side in (-1,1):
-                for y in range(263,321,18):s.shoot('bubble',s.x,y,side*2.35,-.18,25,curve=-.001)
-            yield from s.wait(20)
+                for off in (-26,-86):s.shoot('bubble',s.x,s.gy+off,side*1.7,-.04,20)
+            yield from s.wait(28)
         else:
             yield from s.tell(45)
-            for x in (s.L+38,s.L+105,s.R-40):s.g.zones.append(Zone(x,320,34,150,28,18,35*D()['dmg'],'frost',2))
+            for x in (s.L+38,s.L+105,s.R-40):s.g.zones.append(Zone(x,s.gy,34,150,28,18,24*D()['dmg'],'frost',2))
             yield from s.wait(25)
 class Vellamo(WaterBoss):
     def __init__(s,g,x,y):WaterBoss.__init__(s,g,'vellamo',x,y)
@@ -121,11 +122,12 @@ class Vellamo(WaterBoss):
         s.actname=s.pick([(o,1) for o in acts])
         if s.actname=='lattice':
             yield from s.tell(48)
-            for j in range(9 if s.phase<3 else 13):
-                y=225+(j%5)*17;s.shoot('memory',s.x-28,y,-2.4,0,34,curve=.003*(1 if j%2 else -1),col=(156,166,211));yield from s.wait(4)
+            for j in range(6 if s.phase<3 else 8):
+                off=-26 if j%2==0 else -86
+                s.shoot('memory',s.x-28,s.gy+off,-1.7,0,24,col=(156,166,211));yield from s.wait(8)
         elif s.actname=='crown':
             yield from s.tell(44)
-            for x in range(int(s.L+20),int(s.R),52):s.g.zones.append(Zone(x,320,28,130,tele(35)+((x//20)%3)*11,21,36*D()['dmg'],'tidepike',3))
+            for x in range(int(s.L+20),int(s.R),52):s.g.zones.append(Zone(x,s.gy,28,130,tele(35)+((x//20)%3)*11,21,28*D()['dmg'],'tidepike',3))
             yield from s.wait(28)
         elif s.actname=='undertow':
             yield from s.tell(43)
@@ -137,10 +139,10 @@ class Vellamo(WaterBoss):
             yield from s.wait(20)
         elif s.actname=='cage':
             yield from s.tell(46);t=s.mid_target()
-            if t:s.g.zones.append(Zone(t.x,320,70,95,22,25,43*D()['dmg'],'cage',2))
+            if t:s.g.zones.append(Zone(t.x,s.gy,70,95,22,25,30*D()['dmg'],'cage',2))
             yield from s.wait(32)
         else:
             yield from s.tell(54);s.burst(13,2.0,'memory')
-            for x in range(int(s.L+15),int(s.R),53):s.g.zones.append(Zone(x,320,18,118,25,15,36*D()['dmg'],'frost',2))
+            for x in range(int(s.L+15),int(s.R),53):s.g.zones.append(Zone(x,s.gy,18,118,25,15,28*D()['dmg'],'frost',2))
             yield from s.wait(30)
 BOSS_CLS.update(joukahainen=Joukahainen,ahti=Ahti,aino=Aino,vellamo=Vellamo)

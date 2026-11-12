@@ -178,7 +178,9 @@ class GameCore:
                 for pose in ("idle","windup","roar"):
                     spr=louhi_frame(pose,0,phase=phase);surf=pygame.Surface((W,H),pygame.SRCALPHA);surf.blit(spr,(0,0))
         a=ARENAS[key]
-        s.wd.set_open("d_%s_in" % key, False); s.arena = key
+        s.wd.set_open("d_%s_in" % key, False)
+        if a.get("door_out") and ("d_%s_out" % key) in DYN: s.wd.set_open("d_%s_out" % key, False)
+        s.arena = key
         gy = a["ground"] * TILE
         span = a["x1"] - a["x0"]
         bx = (a["x0"] + max(8, min(12, span // 2))) if key in ("joukahainen", "ahti", "aino", "vellamo") else (a["x1"] - 5)
@@ -204,6 +206,7 @@ class GameCore:
         if k in ("joukahainen", "ahti"):
             if k not in sv["bosses"]: sv["bosses"].append(k)
             s.wd.set_open("d_%s_in" % k, True)
+            if ("d_%s_out" % k) in DYN: s.wd.set_open("d_%s_out" % k, True)
             s.felled = (k, 0)
             sv["bonfire"] = "b11" if k == "joukahainen" else "b12"
             s.save_game()
@@ -250,10 +253,44 @@ class GameCore:
         for ch in range(24, 28): s.chunk(ch)
     def start_aino_reveal(s):
         s.reset_boss(); s.state_name="aino_reveal"; s.reveal_t=0
-        for p in s.players: p.spawn((646+p.idx*6)*TILE, 320); p.refill(); p.inv=180
-        s.save["bonfire"]="b13"
-        if "b13" not in s.save["seen"]: s.save["seen"].append("b13")
+        if "aino" not in s.save["bosses"]: s.save["bosses"].append("aino")
+        if "d_aino_out" in DYN: s.wd.set_open("d_aino_out", True)
+        if "d_aino_in" in DYN: s.wd.set_open("d_aino_in", True)
+        a = ARENAS["aino"]
+        for p in s.players:
+            p.spawn((a["x1"] + 3 + p.idx * 2) * TILE, a["ground"] * TILE); p.refill(); p.inv=180
+        prev = s.save.get("bonfire", "b10")
+        for k, col in BONFIRES.items():
+            if str(k).startswith("b") and k[1:].isdigit() and int(k[1:]) >= 10 and col < a["x1"]:
+                if not str(prev).startswith("b") or not prev[1:].isdigit() or col >= BONFIRES.get(prev, -1):
+                    prev = k
+        s.save["bonfire"] = prev
+        if prev not in s.save["seen"]: s.save["seen"].append(prev)
         s.save_game(); gc.collect()
+    def tick_collapse(s):
+        wd = s.wd
+        if not hasattr(wd, "gone"): wd.gone = {}
+        if not hasattr(wd, "stand"): wd.stand = {}
+        standing = set()
+        for p in s.players:
+            if p.alive() and p.on_ground:
+                standing.add((int(p.x // TILE), int(p.y // TILE)))
+        changed = False
+        for tile in COLLAPSE:
+            key = (int(tile[0]), int(tile[1]))
+            if key in wd.gone: continue
+            if key in standing:
+                wd.stand[key] = wd.stand.get(key, 0) + 1
+                if wd.stand[key] >= 42:
+                    wd.gone[key] = s.frames + 200
+                    wd.stand[key] = 0
+                    changed = True
+            else:
+                wd.stand[key] = 0
+        for key, back in list(wd.gone.items()):
+            if s.frames >= back and key not in standing:
+                wd.gone.pop(key, None); changed = True
+        if changed: s.CHUNK_REV[0] += 1
     def start_vellamo_ending(s):
         gc.collect(); s.state_name="vellamo_ending"; s.vel_end_t=0
         s.save["vellamo_done"]=True; s.save["ng_ready"]=True; s.save_game()
@@ -376,11 +413,11 @@ class GameCore:
             bx, by = bonfire_pos(s.save["bonfire"]); return snap(bx, by)
         return x, y
     def poke_secret(s, rect):
-        for k in ("secret_f", "secret_r"):
-            if not s.wd.state[k]: continue
-            for (tx, ty) in DYN[k]["tiles"]:
+        for k, d in DYN.items():
+            if d.get("key") != "wall" or not s.wd.state.get(k): continue
+            for (tx, ty) in d["tiles"]:
                 if rect[0] < tx * TILE + TILE and rect[0] + rect[2] > tx * TILE and rect[1] < ty * TILE + TILE and rect[1] + rect[3] > ty * TILE:
-                    s.open_dyn(k, True); return
+                    s.open_dyn(k, True); s.CHUNK_REV[0] += 1; return
     def open_dyn(s, k, silent=False):
         s.CHUNK_REV[0]+=1
         d = DYN[k]; s.wd.state[k] = not d["active"]; s.wd._rebuild()
@@ -520,6 +557,7 @@ class GameCore:
             s.hitstop -= 1
             s.parts.update(); s.tick_fx(); return
         for p in s.players: p.update()
+        s.tick_collapse()
         self_hz = [p for p in s.players if p.alive()]
         for p in self_hz:
             if p.climb: continue

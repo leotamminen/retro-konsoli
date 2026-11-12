@@ -18,7 +18,7 @@ TILE_NAMES = {
     AIR: "ilma", SOLID: "maa", PLAT: "taso", LADDER: "tikkaat", THORN: "piikit", WATER: "vesi",
 }
 LAND_ENEMIES = ("peikko", "susi", "korppi", "jousi", "hukkunut", "virvatuli", "nakki", "haamu", "henki", "joutsen")
-WATER_ENEMIES = ("lampi", "rapu", "poltto", "merikala", "kutri")
+WATER_ENEMIES = ("lampi", "rapu", "poltto", "merikala", "kutri", "haaksi", "koralli", "ankkuri", "pylvas")
 BOSS_KINDS = ("hiisi", "turso", "tytti", "louhi", "joukahainen", "ahti", "aino", "vellamo")
 WORLD_BOSSES = ("hiisi", "turso", "tytti", "louhi")
 VELLAMO_BOSSES = ("joukahainen", "ahti", "aino", "vellamo")

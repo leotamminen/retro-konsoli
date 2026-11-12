@@ -28,13 +28,11 @@ def render_chunk(cx, wd):
     x0 = cx * 20; surf = mk(320, ROWS * TILE); ex = _exposed_table()
     G = GRID
     def t(x, y):
-        if x < 0 or x >= COLS or y < 0: return SOLID
-        if y >= ROWS: return SOLID
-        return G[y][x]
+        return wd.tile(x, y)
     for tx in range(x0, min(COLS, x0 + 20)):
         area = area_at(tx); pal = PAL[area]; px = (tx - x0) * TILE
         for ty in range(ROWS):
-            v = G[ty][tx]; py = ty * TILE; hh = _h(tx, ty)
+            v = t(tx, ty); py = ty * TILE; hh = _h(tx, ty)
             if v == SOLID:
                 up, dn, lf, rt = t(tx, ty - 1), t(tx, ty + 1), t(tx - 1, ty), t(tx + 1, ty)
                 exposed = not (up == SOLID and dn == SOLID and lf == SOLID and rt == SOLID)
@@ -102,6 +100,10 @@ def dyn_tile_surf(kind, w=1, h=1):
         _rc(s, (110, 78, 48), (0, 0, w * TILE, 6)); _rc(s, (150, 106, 62), (0, 0, w * TILE, 2))
         for i in range(0, w * TILE, 8): _rc(s, (60, 40, 28), (i, 0, 1, 6))
         _rc(s, (70, 50, 34), (0, 6, w * TILE, 1))
+    elif kind == "vellamo_fog":
+        s.fill((28, 78, 96, 230))
+        for i in range(0, h * TILE, 4): s.fill((150, 220, 220, 160), (0, i, w * TILE, 1))
+        _rc(s, (180, 230, 220), (0, 0, w * TILE, 2))
     elif kind == "wall":
         s.fill((84, 84, 98, 255))
         for k in range(30): s.fill((60, 60, 76, 255), (_h(k, 3) % (w * TILE - 1), _h(k, 4) % (h * TILE - 1), 2, 1))

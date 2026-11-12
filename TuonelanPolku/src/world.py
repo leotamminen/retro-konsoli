@@ -47,3 +47,5 @@ ITEMS = {k: tuple(v) for k, v in _W["items"].items()}
 for _item in _W.get("extras", {}).get("items", []):
     ITEMS[_item[0]] = tuple(_item[1:])
 SPAWNS = [tuple(s) for s in _W["spawns"]] + [tuple(s) for s in _W.get("extras", {}).get("spawns", [])]
+CURRENTS = [tuple(c) for c in _W.get("currents", [])]
+COLLAPSE = [tuple(c) for c in _W.get("collapse", [])]

@@ -26,6 +26,8 @@ wd.set_open("d_vellamo", True)
 for key in ("joukahainen", "ahti", "aino", "vellamo"):
     if "d_%s_in" % key in G["DYN"]:
         wd.set_open("d_%s_in" % key, True)
+    if "d_%s_out" % key in G["DYN"]:
+        wd.set_open("d_%s_out" % key, True)
 
 def key(x, y):
     return (int(x // 8), int(round(y / TILE)))
@@ -61,13 +63,24 @@ def expand(x, y):
             r = sim_jump(x, y, d, hold, steer)
             if r:
                 out.append(r)
-    b = Body(x, y); b.on_ground = True
-    for f in range(80):
-        walk_step(wd, b, 0, -1, False, False, False)
-        if not b.climb and f > 4:
-            break
-        if b.climb and f % 8 == 0:
-            out.append((b.x, b.y))
+    for iy in (-1, 1):
+        b = Body(x, y); b.on_ground = True
+        for f in range(80):
+            walk_step(wd, b, 0, iy, False, False, False)
+            if not b.climb and f > 4:
+                break
+            if b.climb and f % 8 == 0:
+                out.append((b.x, b.y))
+    tx = int(x // TILE)
+    if wd.tile(tx, int(round(y / TILE))) == G["PLAT"]:
+        b = Body(x, y); b.on_ground = True
+        b.drop_t = 10; b.y += 1.5; b.on_ground = False; b.coyote = 0
+        for f in range(90):
+            walk_step(wd, b, 0, 0, False, False, False)
+            if hazard_at(wd, b) or b.y > ROWS * TILE:
+                break
+            if b.on_ground and f > 2:
+                out.append((b.x, b.y)); break
     return out
 
 def bfs(seeds):
@@ -99,10 +112,10 @@ vis = bfs([(bx, by)])
 print("nodes", len(vis), "seconds", round(time.time() - t0, 1))
 fail = []
 for bid, tx in G["BONFIRES"].items():
-    if int(bid[1:]) < 10:
+    if not (bid[1:].isdigit() and int(bid[1:]) >= 10):
         continue
-    ty = G["floor_row"](tx, 0)
-    if not near(vis, tx, ty):
+    bx, by = G["bonfire_pos"](bid)
+    if not near(vis, int(bx // TILE), int(round(by / TILE))):
         fail.append(bid)
 for name, arena in G["ARENAS"].items():
     if name not in ("joukahainen", "ahti", "aino", "vellamo"):

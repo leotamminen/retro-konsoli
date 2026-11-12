@@ -16,6 +16,7 @@ for _key, _fi, _en in (
     ("bf_b11", "Syvänteen nuotio", "Depths Bonfire"),
     ("bf_b12", "Temppelin nuotio", "Cathedral Bonfire"),
     ("bf_b13", "Vapauden ranta", "Shore of Freedom"),
+    ("bf_b14", "Kryptan nuotio", "Crypt Bonfire"),
     ("it_c_pearl", "Helmi", "Pearl"),
     ("it_c_pearl_d", "Kestavyys palautuu hieman nopeammin.", "Stamina returns a little faster."),
 ):

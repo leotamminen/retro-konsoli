@@ -348,7 +348,7 @@ class Player(Body):
     def phys(s, fric=0.82, grav=True):
         g = s.g
         if isinstance(g, GameCore) and g.arena=="ahti":
-            water=228-g.tide
+            water=ARENAS["ahti"]["ground"]*TILE-92-g.tide
             s.in_water=s.y-PH_>water
             if s.in_water:
                 s.vy=min(2.8, s.vy-.045); s.vx+=math.sin(g.frames*.04)*.025
@@ -374,6 +374,10 @@ class Player(Body):
         if ix: s.face = 1 if ix > 0 else -1
         s.run_speed = RUN
         ev = walk_step(g.wd, s, ix, iy, jp, jh, s.dj_ok, drop)
+        tx = int(s.x // TILE); ty = int((s.y - 4) // TILE)
+        for cx, cy, cw, ch, dire in CURRENTS:
+            if cx <= tx < cx + int(cw) and cy <= ty < cy + int(ch):
+                s.vx += 0.07 if dire >= 0 else -0.07
         if "jump" in ev: sfx("jump", 0.5); g.parts.burst(s.x, s.y, (200, 200, 190), 3, 0.6, 10, 1, 0.0)
         if "djump" in ev: sfx("djump", 0.6); g.parts.burst(s.x, s.y, (190, 230, 255), 8, 1.0, 14, 1, 0.0)
         if "land" in ev: sfx("land", 0.4)

@@ -64,9 +64,9 @@ def body(tmp):
     ok, errors = doc.save(maps / "world.json")
     req(ok and errors == [], "edited map saved " + " ".join(errors))
     vdoc = MapDoc.load(maps / "vellamo.json")
-    for row in range(16, 20):
+    for row in range(8, 10):
         vdoc.paint(492, row, 1)
-    for row in range(20, 25):
+    for row in range(10, 16):
         vdoc.erase(494, row)
     vdoc.resize_arena("joukahainen", "bottom", 2)
     vdoc.move_arena("joukahainen", 6, 0)
@@ -115,25 +115,25 @@ def body(tmp):
         seen["screen"] = pixel[0] > 100 and 0 <= sx < ns["W"] and 0 <= sy < ns["H"]
         arena = ns["ARENAS"]["joukahainen"]
         door = ns["DYN"]["d_joukahainen_in"]["tiles"]
-        seen["arena"] = arena["x0"] == 562 and arena["ground"] == 22 and door[0][0] == 562 and door[-1][1] == 21
+        seen["arena"] = arena["x0"] == 581 and arena["ground"] == 12 and door[0][0] == 581 and door[-1][1] == 11
         world = ns["World"]()
         hill = ns["Body"](492 * 16 + 8, 8 * 16, 8, 16)
         hill.vy = 8
         for _ in range(40):
             ns["move_body"](world, hill)
-        seen["hill"] = hill.on_ground and abs(hill.y - 16 * 16) < 1
+        seen["hill"] = hill.on_ground and abs(hill.y - 8 * 16) < 1
         pit = ns["Body"](494 * 16 + 8, 8 * 16, 8, 16)
         pit.vy = 8
         for _ in range(60):
             ns["move_body"](world, pit)
-        seen["pit"] = pit.on_ground and pit.y > 24 * 16
+        seen["pit"] = pit.on_ground and pit.y > 14 * 16
         game.arena = "joukahainen"
         _tx, ty = game.cam_goal()
-        seen["camera"] = abs(ty - (22 * 16 + 8 - ns["H"])) < 1
+        seen["camera"] = abs(ty - (12 * 16 + 8 - ns["H"])) < 1
         game.start_boss("joukahainen")
         span = arena["x1"] - arena["x0"]
         expect_x = arena["x0"] + max(8, min(12, span // 2))
-        seen["boss"] = abs(game.boss.x / 16 - expect_x) < 1.5 and abs(game.boss.y - 22 * 16) < 2
+        seen["boss"] = abs(game.boss.x / 16 - expect_x) < 1.5 and abs(game.boss.y - 12 * 16) < 2
 
     ns = {"__name__": "__main__", "PROBE": probe}
     exec(compile(source.replace(old, new, 1), str(preview), "exec"), ns)

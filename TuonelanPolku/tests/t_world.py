@@ -98,7 +98,8 @@ def run():
     while True:
         wd = World()
         if SECRETS:
-            for k in ("secret_f", "secret_r"): wd.set_open(k, True)
+            for k, d in Gd["DYN"].items():
+                if d.get("key") == "wall": wd.set_open(k, True)
         for lv in ("lv_gate", "lv_ladder", "lv_bridge"):
             if lv in flags: wd.set_open(Gd["LEVERS"][lv]["opens"], True)
         for b in ("hiisi", "turso", "tytti", "joukahainen", "ahti", "aino"):
@@ -137,7 +138,9 @@ if __name__ == "__main__":
     print("flags final:", sorted(flags), "tytti arena reached:", "tytti" in flags, "BAD", bad)
     # --- softlock analysis: in the final world, can every reachable standing spot get back to some bonfire? ---
     wd = World()
-    for k in ("secret_f", "secret_r", "gate_f", "lad_s", "bridge", "d_hiisi_out", "d_turso_out"): wd.set_open(k, True)
+    for k, d in Gd["DYN"].items():
+        if d.get("key") == "wall" or k in ("gate_f", "lad_s", "bridge", "d_hiisi_out", "d_turso_out"):
+            wd.set_open(k, True)
     nodes = list(vis.values()); rev = collections.defaultdict(set)
     for n in nodes:
         for r in expand(wd, n, True): rev[key(*r)].add(key(*n))
