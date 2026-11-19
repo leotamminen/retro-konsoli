@@ -89,8 +89,19 @@ def _chunks(c, world, cam, t):
             _platform(c, origin + px - cam, top, pw)
         for hx, hy, hw, hh in chunk.hazards:
             _thorn(c, origin + hx - cam, hy, hw, hh, t)
+        for hx, hy, hw, hh in chunk.ceilings:
+            _ceiling(c, origin + hx - cam, hy, hw, hh)
         if chunk.name == "maali":
             _banner(c, origin + 56 - cam, g_font=None, font=None, t=t, canvas_font=c)
+    for tile in world.crumbles:
+        if tile.x + tile.w < cam - 8 or tile.x > cam + W + 8:
+            continue
+        _crumble(c, tile.x - cam, tile.top, tile.w, tile)
+    for slab in world.movers:
+        x, top, w = slab.at(world.frame)
+        if x + w < cam - 8 or x > cam + W + 8:
+            continue
+        _mover(c, x - cam, top, w)
 
 
 def _platform(c, x, top, w):
@@ -117,6 +128,38 @@ def _platform(c, x, top, w):
     pygame.draw.line(c, edge, (x, top + h - 1), (x + w - 1, top + h - 1))
     for dx in range(3, w - 2, 7):
         _dot(c, x + dx, top + 6, edge)
+
+
+def _ceiling(c, x, y, w, h):
+    x, y, w, h = int(x), int(y), int(w), int(h)
+    if x > W or x + w < 0:
+        return
+    pygame.draw.rect(c, (70, 48, 58), (x, y, w, 4))
+    n = max(2, w // 6)
+    for i in range(n):
+        bx = x + int(i * w / n)
+        pygame.draw.polygon(c, (210, 70, 78), [(bx + 1, y + 3), (bx + 4, y + h), (bx + 7, y + 3)])
+
+
+def _crumble(c, x, top, w, tile):
+    x, top, w = int(x), int(top), int(w)
+    if not tile.live:
+        return
+    shake = (tile.timer // 3) % 2 if tile.armed else 0
+    x += shake
+    pygame.draw.rect(c, (150, 96, 58), (x, top, w, 10))
+    pygame.draw.rect(c, (196, 150, 86), (x, top, w, 3))
+    col = (80, 40, 28) if tile.armed else (90, 60, 40)
+    for dx in range(4, max(5, w - 4), 8):
+        pygame.draw.line(c, col, (x + dx, top + 3), (x + dx + 2, top + 9))
+
+
+def _mover(c, x, top, w):
+    x, top, w = int(x), int(top), int(w)
+    pygame.draw.rect(c, (70, 90, 110), (x, top + 8, w, 3))
+    pygame.draw.rect(c, (150, 186, 206), (x, top, w, 8))
+    pygame.draw.rect(c, (230, 244, 250), (x, top, w, 2))
+    pygame.draw.rect(c, (40, 60, 80), (x, top, w, 8), 1)
 
 
 def _thorn(c, x, y, w, h, t):
@@ -490,6 +533,8 @@ def draw_frame(g):
         draw_world(g)
         if st == "ready":
             draw_count(g)
+        elif st == "play" and g.go_flash:
+            blit(g.canvas, _font(g.canvas), tr("go"), W // 2, 78, (255, 244, 160), 3, center=True)
         elif st == "roundend":
             draw_round_end(g)
         elif st == "paused":

@@ -68,7 +68,7 @@ class Tests(unittest.TestCase):
         with open(os.path.join(root, "version.json"), encoding="utf-8") as fh:
             version = json.loads(fh.read())["version"]
         self.assertEqual(version, load_version())
-        self.assertEqual(version, "0.1")
+        self.assertEqual(version, "0.2")
         for dirpath, _dirs, files in os.walk(os.path.join(root, "kultakiri")):
             for name in files:
                 if not name.endswith(".py"):
@@ -149,14 +149,48 @@ class Tests(unittest.TestCase):
             return best
         self.assertLess(apex(40), apex(6) - 10)
 
+    def test_scroll_is_faster_than_a_normal_run(self):
+        from kultakiri.const import MAX_RISE, RUN, SCROLL0, SCROLL_MAX, SPEED_RUN, TILE
+        self.assertGreaterEqual(SCROLL0, RUN + 0.05)
+        self.assertGreaterEqual(SCROLL_MAX, SCROLL0)
+        self.assertGreater(SPEED_RUN, SCROLL_MAX + 0.3)
+        self.assertEqual(MAX_RISE, TILE * 2)
+
     def test_opening_and_no_double_hard(self):
+        from kultakiri.const import SCROLL_MAX
         world = World(random.Random(2))
-        world.ensure(9000)
+        world.ensure(9000, SCROLL_MAX)
         names = [chunk.name for _o, chunk in world.placed]
         self.assertEqual(names[0], "alku")
         self.assertIn("maali", names)
+        self.assertIn("katto", names)
+        self.assertIn("murea", names)
+        self.assertIn("liuku", names)
         for left, right in zip(names, names[1:]):
+            self.assertNotEqual(left, right)
             self.assertFalse(BY_NAME[left].hard and BY_NAME[right].hard)
+        self.assertTrue(any(chunk.tier >= 2 for _o, chunk in world.placed))
+
+    def test_countdown_locks_movement_until_go(self):
+        from kultakiri.game import Game
+        from kultakiri.input import ScriptPad
+        screen = pygame.display.set_mode((320, 180))
+        game = Game(screen)
+        pad = ScriptPad("count")
+        game.pads[pad.id] = pad
+        game.add_player(pad)
+        game.begin_round()
+        x0 = game.players[0].body.x
+        while game.state == "ready":
+            pad.desired = {"x": 1.0, "y": 0.0, "jump": True, "start": False, "back": False, "alt": False}
+            game.update()
+            if game.state == "ready":
+                self.assertEqual(game.players[0].body.x, x0)
+                self.assertEqual(game.camera, 0)
+                self.assertEqual(game.players[0].body.vx, 0)
+        self.assertEqual(game.state, "play")
+        self.assertGreater(game.camera, 0)
+        self.assertGreater(game.go_flash, 0)
 
     def test_powerups_do_what_they_say(self):
         ground = [(-20, EY, 400)]
@@ -316,7 +350,7 @@ class BootTests(unittest.TestCase):
         self.assertGreaterEqual(stats["validated"], 12)
         self.assertGreaterEqual(stats["chunk_types"], 8)
         self.assertGreaterEqual(stats["power_types"], 6)
-        self.assertGreaterEqual(stats["double_air"], 1)
+        self.assertIn("double", stats["got_powers"])
         self.assertGreaterEqual(stats["speed_fast"], 1)
         self.assertGreaterEqual(stats["shield_on"], 1)
         self.assertGreaterEqual(stats["magnet_pulls"], 1)

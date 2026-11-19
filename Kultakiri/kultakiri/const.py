@@ -8,16 +8,23 @@ JUMP_V = -5.15
 JUMP_CUT = 0.5
 MAX_FALL = 5.1
 GLIDE_FALL = 0.62
+TILE = 16
+MAX_RISE = TILE * 2          # one step is never more than two tiles
 RUN = 1.82
-SPEED_RUN = 2.24
+# The screen is always a little faster than a normal run, so a full sprint
+# drifts toward the left edge and can never catch the right edge.
+# Only the speed powerup outruns the scroll.
+SPEED_RUN = 2.58
 ACCEL = 0.62
 COYOTE = 6
 JUMP_BUF = 6
-SLOW_MUL = 0.5
+SLOW_MUL = 0.84
+SHORT_HOLD = 9
+CRUMBLE_TIME = 66
 
-SCROLL0 = 0.98
-SCROLL_MAX = 1.38
-SCROLL_ACC = 0.00020
+SCROLL0 = 1.88               # RUN + 0.06
+SCROLL_MAX = 1.96            # RUN + 0.14
+SCROLL_ACC = 0.00012
 
 CH_W = 208
 EY = 136

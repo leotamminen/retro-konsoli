@@ -144,6 +144,19 @@ def _report(adapter, players, rounds, seed, video, video_len, events, clips, cra
                     continue
                 lines.append("  - %.1fs %s" % (event.t, event.summary))
         lines.append("")
+    extra = {}
+    if hasattr(adapter, "summary"):
+        try:
+            extra = adapter.summary() or {}
+        except Exception:
+            extra = {}
+    if extra:
+        lines.extend(["## Race checks", ""])
+        hits = extra.get("right_edge_without_speed", 0)
+        seen = extra.get("right_edge_samples", 0)
+        lines.append("- Right-edge samples without speed: %d / %d" % (hits, seen))
+        lines.append("- Moves during the countdown: %d" % extra.get("moved_before_go", 0))
+        lines.append("")
     lines.extend(["## Notable moments", ""])
     shown = 0
     for event in events:

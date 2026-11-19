@@ -82,6 +82,11 @@ class KultakiriAdapter:
         self._scoreboard_frames = 0
         self._want_next = False
         self._prev_state = "ready"
+        self.right_hits = 0
+        self.right_seen = 0
+        self.moved_before_go = 0
+        self._ready_xy = None
+        self._seen_chunks = set()
 
     def start(self, players, seed, rounds):
         if players < 2 or players > 4:
@@ -113,6 +118,11 @@ class KultakiriAdapter:
         self._scoreboard_frames = 0
         self._prev_state = game.state
         self._quiet = {}
+        self.right_hits = 0
+        self.right_seen = 0
+        self.moved_before_go = 0
+        self._ready_xy = None
+        self._seen_chunks = set()
 
     def write_inputs(self):
         game = self.game
@@ -159,6 +169,8 @@ class KultakiriAdapter:
             events.extend(self._diff(frame, t, snaps))
         self._prev = snaps
         events.extend(self._stat_events(frame, t))
+        events.extend(self._race_checks(frame, t))
+        events.extend(self._course_sights(frame, t))
         if game.state == "roundend":
             self._scoreboard_frames += 1
         else:
@@ -170,6 +182,40 @@ class KultakiriAdapter:
 
     def close(self):
         pygame.quit()
+
+    def summary(self):
+        return {
+            "right_edge_without_speed": self.right_hits,
+            "right_edge_samples": self.right_seen,
+            "moved_before_go": self.moved_before_go,
+        }
+
+    def _race_checks(self, frame, t):
+        game = self.game
+        out = []
+        if game.state == "ready":
+            now = [(round(p.body.x, 2), round(p.body.y, 2), round(p.body.vx, 2)) for p in game.players]
+            if self._ready_xy is None:
+                self._ready_xy = now
+            elif now != self._ready_xy:
+                self.moved_before_go += 1
+                if self.moved_before_go == 1:
+                    out.append(Event(t, frame, "anomaly", "A player moved during the countdown, before NYT", 100, True))
+        if game.state == "play":
+            limit = W - 12 - 8
+            for player in game.players:
+                if player.state != "run" or player.speed_t > 0:
+                    continue
+                self.right_seen += 1
+                if player.body.x - game.camera >= limit:
+                    self.right_hits += 1
+                    if self.right_hits == 1:
+                        out.append(Event(
+                            t, frame, "anomaly",
+                            "%s reached the right edge without the speed powerup" % PNAMES[player.idx],
+                            100, True,
+                        ))
+        return out
 
     def _diff(self, frame, t, snaps):
         out = []
@@ -212,6 +258,31 @@ class KultakiriAdapter:
             self._round_ends += 1
             self._want_next = self._round_ends < self.rounds
         self._prev_state = game.state
+        return out
+
+    def _course_sights(self, frame, t):
+        """Note the first time a hand-built set piece scrolls into view."""
+        game = self.game
+        if game.world is None or game.state != "play":
+            return []
+        show = {
+            "katto": "Spike ceiling, short hop",
+            "piikit": "Spikes on the floor and on a step",
+            "murea": "Crumbling bridge",
+            "liuku": "Moving platform",
+            "haara": "High road with a powerup, low road with a bramble",
+            "raput": "Staircase up and down",
+            "portaat": "Steps up to a higher route",
+            "nousu": "Climb to a powerup",
+        }
+        out = []
+        cam = game.camera
+        for origin, chunk in game.world.placed:
+            if chunk.name not in show or chunk.name in self._seen_chunks:
+                continue
+            if origin < cam + W - 20 and origin + chunk.w > cam + 40:
+                self._seen_chunks.add(chunk.name)
+                out.append(Event(t, frame, "course", "%s: %s" % (chunk.name, show[chunk.name]), 78))
         return out
 
     def _bounds(self, frame, t, snap):

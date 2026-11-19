@@ -4,8 +4,8 @@ import random
 
 from .const import (
     ACCEL, CH_W, COYOTE, EY, FALL_Y, GLIDE_FALL, GRAV, JUMP_BUF, JUMP_CUT,
-    JUMP_HOLD, JUMP_V, LEAD, MAX_FALL, PH, PW, RUN, SCROLL_MAX, SLOW_MUL,
-    SPEED_RUN,
+    JUMP_HOLD, JUMP_V, LEAD, MAX_FALL, MAX_RISE, PH, PW, RUN, SCROLL0,
+    SCROLL_MAX, SHORT_HOLD, SLOW_MUL, SPEED_RUN, CRUMBLE_TIME,
 )
 
 
@@ -180,6 +180,33 @@ def next_ledge(body, solids):
     return best
 
 
+def ceiling_ahead(body, hazards):
+    """Hanging spikes a full jump would hit. A short hop stays under them."""
+    feet = body.feet()
+    for hx, hy, hw, hh in hazards:
+        bottom = hy + hh
+        if bottom < feet - 18 and bottom > feet - 56:
+            if hx < body.x + body.w + 40 and hx + hw > body.x - 6:
+                return True
+    return False
+
+
+def mover_dx(frame, period, amp):
+    return amp * math.sin(6.28318530718 * (frame % period) / float(period))
+
+
+def live_solids(chunk, origin, frame, crumble_timers):
+    """Static ledges plus bridges that have not crumbled and platforms that slide."""
+    out = [(origin + px, top, pw) for px, top, pw in chunk.plats]
+    timers = crumble_timers or [0] * len(getattr(chunk, "crumbles", ()))
+    for i, (x, top, w) in enumerate(getattr(chunk, "crumbles", ())):
+        if timers[i] < CRUMBLE_TIME:
+            out.append((origin + x, top, w))
+    for x, top, w, amp, period in getattr(chunk, "movers", ()):
+        out.append((origin + x + mover_dx(frame, period, amp), top, w))
+    return out
+
+
 def _threat(body, solids, hazards, lead):
     if hazard_ahead(body, hazards, lead + 16):
         return True
@@ -211,7 +238,8 @@ class Pilot:
             held = True
         elif body.on_ground and _threat(body, solids, hazards, LEAD):
             if self.rng.random() <= self.skill:
-                self.hold = JUMP_HOLD - 1
+                hop = SHORT_HOLD if ceiling_ahead(body, hazards) else JUMP_HOLD
+                self.hold = hop - 1
                 held = True
                 pressed = True
         if (not body.on_ground) and air_jumps > 0 and not self.did_air and body.vy > 0.2:
@@ -338,13 +366,23 @@ def validate_chunk(chunk):
             raise AssertionError("%s: thorn in the runway" % chunk.name)
         bottom = hy + hh
         sitting = False
-        for px, top, pw in chunk.plats:
+        for px, top, pw in list(chunk.plats) + list(getattr(chunk, "crumbles", ())):
             if abs(bottom - top) <= 2.0 and hx < px + pw - 2 and hx + hw > px + 2:
                 sitting = True
         if not sitting:
             raise AssertionError("%s: thorn is not standing on a ledge" % chunk.name)
+    for hx, hy, hw, hh in getattr(chunk, "ceilings", ()):
+        if hy + hh > EY - 22:
+            raise AssertionError("%s: ceiling hangs too low to duck" % chunk.name)
+        if hx < 56:
+            raise AssertionError("%s: ceiling in the runway" % chunk.name)
     _lint_envelope(chunk)
-    _run_pilot(chunk)
+    _lint_rise(chunk)
+    _lint_movers(chunk)
+    # Every chunk can show up once the scroll has ramped, so prove the fast scroll.
+    _run_pilot(chunk, scroll=SCROLL_MAX)
+    if getattr(chunk, "tier", 0) == 0:
+        _run_pilot(chunk, scroll=SCROLL0)
     return True
 
 
@@ -353,6 +391,20 @@ def _cover(chunk, x, top, slop=3.0):
         if p[0] - 0.1 <= x <= p[0] + p[2] + 0.1 and abs(p[1] - top) <= slop:
             return p
     return None
+
+
+def _bridged(chunk, a, b):
+    """A crumble or a mover's always-there band fills the hole between a and b."""
+    gap_l = a[0] + a[2]
+    gap_r = b[0]
+    for x, top, w in getattr(chunk, "crumbles", ()):
+        if abs(top - a[1]) <= 4 and x < gap_r - 2 and x + w > gap_l + 2:
+            return True
+    for x, top, w, amp, _period in getattr(chunk, "movers", ()):
+        left, right = x + amp, x + w - amp
+        if abs(top - a[1]) <= 4 and left < gap_r - 2 and right > gap_l + 2:
+            return True
+    return False
 
 
 def _has_step(plats, a, b):
@@ -373,9 +425,11 @@ def _lint_envelope(chunk):
             if b is a:
                 continue
             gap = b[0] - (a[0] + a[2])
-            if gap < 8 or _has_step(plats, a, b):
+            if gap < 8 or _has_step(plats, a, b) or _bridged(chunk, a, b):
                 continue
             rise = a[1] - b[1]
+            if rise > MAX_RISE:
+                raise AssertionError("%s: rise %spx is more than 2 tiles" % (chunk.name, int(rise)))
             if rise < -4:
                 if gap > 20:
                     raise AssertionError("%s: drop of %spx is wider than a running fall" % (chunk.name, gap))
@@ -388,34 +442,87 @@ def _lint_envelope(chunk):
                 )
 
 
-def _run_pilot(chunk, speed=False):
-    # The next chunk always begins with a ledge at EY, so the seam is ground.
-    solids = chunk_platforms(chunk) + [(float(chunk.w), float(EY), 96.0)]
-    hazards = chunk_hazards(chunk)
+def _lint_rise(chunk):
+    plats = list(chunk.plats) + [(x, y, w) for x, y, w in getattr(chunk, "crumbles", ())]
+    plats += [(x, y, w) for x, y, w, _a, _p in getattr(chunk, "movers", ())]
+    for a in plats:
+        for b in plats:
+            if b is a:
+                continue
+            rise = a[1] - b[1]
+            if rise <= MAX_RISE:
+                continue
+            # Close in x: this step is something a runner might be asked to climb.
+            if b[0] < a[0] + a[2] + 36 and b[0] + b[2] > a[0] - 8:
+                raise AssertionError("%s: rise %spx is more than 2 tiles" % (chunk.name, int(rise)))
+
+
+def _lint_movers(chunk):
+    """A sliding platform must keep a band of floor that never moves away."""
+    for x, top, w, amp, period in getattr(chunk, "movers", ()):
+        if period < 40 or amp < 0 or amp * 2 >= w - 20:
+            raise AssertionError("%s: mover has no stable landing band" % chunk.name)
+        if abs(top - EY) > MAX_RISE:
+            raise AssertionError("%s: mover is more than 2 tiles off the ground line" % chunk.name)
+
+
+def _run_pilot(chunk, speed=False, scroll=None, phase=0):
+    """Cross the chunk while the camera is already faster than a normal run.
+
+    The runner starts with a margin from the left edge, the way a live player
+    who is only a little behind still has room. Speed changes the run, not the
+    camera.
+    """
+    if scroll is None:
+        scroll = SCROLL_MAX
+    # On the entry lip, but already 110px onto the screen, as in a live run.
+    margin = 110.0
+    timers = [0 for _ in getattr(chunk, "crumbles", ())]
+    hazards = list(chunk_hazards(chunk)) + [
+        (hx, hy, hw, hh) for hx, hy, hw, hh in getattr(chunk, "ceilings", ())
+    ]
     b = Body()
-    b.x = 6.0
+    b.x = 10.0
     b.y = EY - PH
     b.vx = 0.0
     b.on_ground = True
     b.speed = bool(speed)
     pilot = Pilot(1.0, random.Random(0))
-    cam = 0.0
-    for frame in range(1100):
+    cam = b.x - margin
+    for frame in range(1400):
+        moved = frame + phase
+        solids = live_solids(chunk, 0.0, moved, timers) + [(float(chunk.w), float(EY), 120.0)]
         b.speed = bool(speed)
         ix, held, pressed = pilot.decide(b, solids, hazards)
         step_body(b, ix, held, pressed, solids)
-        cam += SCROLL_MAX
+        _arm_crumbles(b, chunk, timers)
+        cam += scroll
         if b.feet() > FALL_Y or b.y > EY + 80:
-            raise AssertionError("%s: fell at frame %s x=%.1f y=%.1f" % (chunk.name, frame, b.x, b.y))
-        if b.x + b.w < cam - 2:
-            raise AssertionError("%s: scrolled off at frame %s" % (chunk.name, frame))
+            raise AssertionError("%s: fell at frame %s x=%.1f y=%.1f scroll=%.2f" % (
+                chunk.name, frame, b.x, b.y, scroll))
+        if b.x + b.w < cam - 1:
+            raise AssertionError("%s: scrolled off at frame %s (screen x %.1f)" % (
+                chunk.name, frame, b.x - cam))
         for hx, hy, hw, hh in hazards:
             if rect_hit(b.x, b.y, b.w, b.h, hx, hy, hw, hh):
-                raise AssertionError("%s: thorn at frame %s x=%.1f" % (chunk.name, frame, b.x))
+                raise AssertionError("%s: hit a spike at frame %s x=%.1f y=%.1f" % (
+                    chunk.name, frame, b.x, b.y))
         if b.x > chunk.w + 8 and b.on_ground and abs(b.feet() - EY) < 3:
             return
     raise AssertionError("%s: pilot did not reach the exit (x=%.1f y=%.1f ground=%s)" % (
         chunk.name, b.x, b.y, b.on_ground))
+
+
+def _arm_crumbles(body, chunk, timers):
+    if not body.on_ground:
+        return
+    fx = body.x + body.w * 0.5
+    fy = body.feet()
+    for i, (x, top, w) in enumerate(getattr(chunk, "crumbles", ())):
+        if timers[i] >= CRUMBLE_TIME:
+            continue
+        if abs(fy - top) <= 3.0 and x - 2 <= fx <= x + w + 2:
+            timers[i] += 1
 
 
 def nearest_platform(body, solids):

@@ -41,6 +41,7 @@ class Game:
         self.round_no = 0
         self.round_winners = []
         self.ending = 0
+        self.go_flash = 0
         self.menu_i = 0
         self.quit_hold = 0
         self.running = True
@@ -287,12 +288,16 @@ class Game:
                 return
 
     def up_ready(self):
-        self._move(kill=False)
-        if self.t >= 36 * 3 + 36:
+        # Countdown is a hard lock: no input, no scroll, nobody creeps forward.
+        if self.t >= 108:
             sfx("go")
+            self.go_flash = 28
             self.goto("play")
+            self.up_play()
 
     def up_play(self):
+        if self.go_flash:
+            self.go_flash -= 1
         if self._wants_pause():
             self.menu_i = 0
             self.goto("paused")
@@ -300,11 +305,14 @@ class Game:
         if not self.ending:
             self.scroll = min(SCROLL_MAX, self.scroll + SCROLL_ACC)
             self.camera += self.scroll
-            self.world.ensure(self.camera)
+            self.world.ensure(self.camera, self.scroll)
+            self.world.advance()
             names = {chunk.name for _origin, chunk in self.world.placed}
             if len(names) > self.stats["chunk_types"]:
                 self.stats["chunk_types"] = len(names)
         self._move(kill=not self.ending)
+        if self.world is not None:
+            self.world.arm_crumbles(self.players)
         if self.ending:
             self.ending -= 1
             if self.ending <= 0:
@@ -382,11 +390,13 @@ class Game:
         self.camera = 0.0
         self.scroll = SCROLL0
         self.ending = 0
+        self.go_flash = 0
         self.round_winners = []
         for i, player in enumerate(self.players):
             player.reset_round()
-            player.body.x = 36 + i * 26
+            player.body.x = 128 + i * 16
             player.body.y = EY - PH
+            player.body.vx = 0.0
             player.body.on_ground = True
             player.max_x = player.body.x
         self.goto("ready")
