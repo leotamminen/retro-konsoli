@@ -10,6 +10,8 @@ From the repository root:
 
 ```bash
 python3 tools/playtest/run.py kultakiri --players 4 --rounds 1 --seed 1
+python3 tools/playtest/run.py saunakisa --players 4 --rounds 1 --seed 1 --difficulty vaikea
+python3 tools/playtest/run.py saunakisa --balance 12 --rounds 3 --players 4 --difficulty helppo
 ```
 
 `--players` is 2–4. `--rounds` is how many rounds to play before stopping on the scoreboard. `--seed` fixes the bot mistakes and the level shuffle. `--max-seconds` stops early; leave it at 0 for a full round.

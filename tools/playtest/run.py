@@ -21,6 +21,8 @@ def parse_args(argv):
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--out", type=Path, default=None, help="Output directory (default: tools/playtest/out/...)")
     parser.add_argument("--max-seconds", type=float, default=0, help="Stop early. 0 plays until the rounds finish.")
+    parser.add_argument("--difficulty", default="vaikea", help="Saunakisa CPU difficulty: helppo, normaali, vaikea")
+    parser.add_argument("--balance", type=int, default=0, help="Saunakisa: play N matches with no video and print win rates")
     return parser.parse_args(argv)
 
 
@@ -32,10 +34,20 @@ def main(argv=None):
     os.environ.setdefault("KULTAKIRI_NO_MUSIC", "1")
     os.environ.setdefault("KULTAKIRI_NO_SFX", "1")
     os.environ.setdefault("KULTAKIRI_WINDOWED", "1")
+    os.environ.setdefault("SAUNAKISA_NO_MUSIC", "1")
+    os.environ.setdefault("SAUNAKISA_NO_SFX", "1")
+    os.environ.setdefault("SAUNAKISA_WINDOWED", "1")
     from adapters import get_adapter
     from session import run_session
 
     adapter = get_adapter(args.game)
+    if hasattr(adapter, "difficulty"):
+        adapter.difficulty = args.difficulty
+    if args.balance:
+        if not hasattr(adapter, "balance"):
+            raise SystemExit("%s has no balance run" % args.game)
+        adapter.balance(args.balance, args.players, args.rounds, args.seed)
+        return
     out = args.out
     if out is None:
         out = HERE / "out" / ("%s-p%d-seed%d" % (adapter.name, args.players, args.seed))
