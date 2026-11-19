@@ -1,6 +1,8 @@
 # Batocera: copy the built Kultakiri<version>.pygame to /userdata/roms/pygame/
 import json
 import os
+import sys
+import traceback
 
 import pygame
 
@@ -30,7 +32,30 @@ def open_screen():
         return pygame.display.set_mode((W, H))
 
 
+def write_crash_log():
+    from .settings import crash_log_path
+    path = crash_log_path()
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(traceback.format_exc())
+    except OSError:
+        return None
+    return path
+
+
 def main():
+    try:
+        return _main()
+    except Exception:
+        write_crash_log()
+        try:
+            pygame.quit()
+        except Exception:
+            pass
+        return 1
+
+
+def _main():
     os.environ.setdefault("SDL_GAMECONTROLLER_ALLOW_BACKGROUND_EVENTS", "1")
     frames = int(os.environ.get("KULTAKIRI_FRAMES") or "0")
     fast = bool(frames or os.environ.get("KULTAKIRI_AUTOPLAY"))
@@ -66,7 +91,8 @@ def main():
     if game.autoplay:
         print("KULTAKIRI_STATS " + json.dumps(game.public_stats(), separators=(",", ":")))
     pygame.quit()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

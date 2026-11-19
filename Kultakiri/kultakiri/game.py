@@ -211,6 +211,21 @@ class Game:
                 self.handle_device(ev)
             elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 self.running = False
+            else:
+                self._route_input(ev)
+
+    def _route_input(self, ev):
+        if ev.type in (pygame.KEYDOWN, pygame.KEYUP):
+            kb = self.pads.get("kb")
+            if kb is not None:
+                kb.on_key(ev.key, ev.type == pygame.KEYDOWN)
+            return
+        iid = getattr(ev, "instance_id", None)
+        if iid is None:
+            return
+        pad = self.pads.get("js%d" % int(iid))
+        if pad is not None:
+            pad.on_joy(ev)
 
     def poll_pads(self):
         ks = pygame.key.get_pressed()
@@ -366,7 +381,9 @@ class Game:
     def up_settings(self):
         rows = self._settings_rows()
         n = len(rows)
-        for pad in self.pads.values():
+        # Snapshot: changing the CPU count adds or removes a pad. Doing that
+        # while iterating self.pads raises RuntimeError and the game dies.
+        for pad in list(self.pads.values()):
             owner = self.owner(pad)
             if owner is not None and getattr(owner, "is_cpu", False):
                 continue
@@ -398,7 +415,7 @@ class Game:
     def up_powers(self):
         from .const import POWER_KINDS
         n = len(POWER_KINDS) + 1
-        for pad in self.pads.values():
+        for pad in list(self.pads.values()):
             owner = self.owner(pad)
             if owner is not None and getattr(owner, "is_cpu", False):
                 continue
@@ -419,11 +436,18 @@ class Game:
     def _tweak(self, key, direction):
         st = self.settings
         if key == "cpu":
-            want = max(0, min(3, self._cpu_count() + direction))
-            while self._cpu_count() < want:
-                self.add_cpu(save=False)
-            while self._cpu_count() > want:
-                self.remove_cpu(save=False)
+            humans = sum(1 for p in self.players if not getattr(p, "is_cpu", False))
+            cap = min(3, 4 - humans)
+            want = max(0, min(cap, self._cpu_count() + direction))
+            guard = 0
+            while self._cpu_count() < want and guard < 4:
+                guard += 1
+                if self.add_cpu(save=False) is None:
+                    break
+            while self._cpu_count() > want and guard < 8:
+                guard += 1
+                if self.remove_cpu(save=False) is None:
+                    break
             st["cpu_players"] = self._cpu_count()
         elif key == "diff":
             i = DIFFS.index(st["cpu_diff"]) if st["cpu_diff"] in DIFFS else 1

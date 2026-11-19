@@ -23,11 +23,19 @@ DEFAULTS = {
 }
 
 
-def settings_path():
+def game_dir():
     here = os.path.dirname(os.path.abspath(__file__))
     if os.path.basename(here) == "kultakiri":
         here = os.path.dirname(here)
-    return os.path.join(here, "kultakiri_settings.json")
+    return here
+
+
+def settings_path():
+    return os.path.join(game_dir(), "kultakiri_settings.json")
+
+
+def crash_log_path():
+    return os.path.join(game_dir(), "kultakiri_crash.log")
 
 
 def _clamp_int(value, lo, hi, default):

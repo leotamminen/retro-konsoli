@@ -68,7 +68,7 @@ class Tests(unittest.TestCase):
         with open(os.path.join(root, "version.json"), encoding="utf-8") as fh:
             version = json.loads(fh.read())["version"]
         self.assertEqual(version, load_version())
-        self.assertEqual(version, "0.3")
+        self.assertEqual(version, "0.3.1")
         for dirpath, _dirs, files in os.walk(os.path.join(root, "kultakiri")):
             for name in files:
                 if not name.endswith(".py"):
@@ -332,6 +332,263 @@ class Tests(unittest.TestCase):
         winners = award([a, b])
         self.assertEqual(winners, [b])
         self.assertGreater(b.bank, a.bank)
+
+    def test_cpu_setting_dpad_does_not_crash(self):
+        """Every settings row, left and right, through the real event queue.
+
+        A d-pad press on the CPU row used to add a pad while the menu was
+        still iterating that dict, which raised RuntimeError and closed the
+        game. get_button(DPAD) can also raise ValueError on some SDL builds;
+        that must not blank the frame or kill the process.
+        """
+        from kultakiri.game import Game
+        from kultakiri.settings import crash_log_path, settings_path
+
+        rows = ("cpu", "diff", "rounds", "scroll", "ramp", "freq", "sfx", "music", "full", "powers", "legend", "back")
+        screen = pygame.display.set_mode((320, 180))
+        try:
+            for pads in range(5):
+                self._wipe_settings(settings_path())
+                game = Game(screen)
+                self._attach(game, pads)
+                self._join_humans(game, pads)
+                self._open_settings(game, pads)
+                self._cpu_row_edges(game, pads)
+                self._rails(game, pads)
+                for row in range(len(rows)):
+                    for kind in ("key", "hat", "button"):
+                        for direction in (-1, 1):
+                            game.menu_i = row
+                            if game.state != "settings":
+                                game.goto("settings")
+                            self._tap_axis(game, kind, direction)
+                            self.assertEqual(game.state, "settings")
+                            self._assert_settings_sane(game, pads)
+                self._leave_and_start(game, pads)
+                for _ in range(6):
+                    game.update()
+                self.assertIn(game.state, ("ready", "play"))
+            self._dpad_button_raises_valueerror(screen)
+        finally:
+            pygame.event.clear()
+            self._wipe_settings(settings_path())
+            self._wipe_settings(crash_log_path())
+
+    def test_crash_log_is_written_beside_the_game(self):
+        from kultakiri import game as game_mod
+        from kultakiri.main import main
+        from kultakiri.settings import crash_log_path
+        orig = game_mod.Game.update
+
+        def boom(self):
+            raise RuntimeError("dpad boom")
+
+        game_mod.Game.update = boom
+        os.environ["KULTAKIRI_FRAMES"] = "4"
+        os.environ["KULTAKIRI_WINDOWED"] = "1"
+        os.environ["KULTAKIRI_NO_MUSIC"] = "1"
+        os.environ["KULTAKIRI_NO_SFX"] = "1"
+        path = crash_log_path()
+        if os.path.exists(path):
+            os.remove(path)
+        try:
+            code = main()
+            self.assertEqual(code, 1)
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            self.assertIn("RuntimeError", text)
+            self.assertIn("dpad boom", text)
+        finally:
+            game_mod.Game.update = orig
+            os.environ.pop("KULTAKIRI_FRAMES", None)
+            if os.path.exists(path):
+                os.remove(path)
+            pygame.init()
+
+    def _wipe_settings(self, path):
+        if os.path.exists(path):
+            os.remove(path)
+
+    def _attach(self, game, pads):
+        for i in range(pads):
+            dev = BoomDpad() if i == 0 else FakeGC()
+            if i % 2 == 1:
+                dev = FakeJS()
+                pad = Pad("js", dev, iid=i)
+            else:
+                pad = Pad("gc", dev, iid=i)
+            game.pads[pad.id] = pad
+
+    def _join_humans(self, game, pads):
+        for i in range(pads):
+            self._post_button(i, pygame.CONTROLLER_BUTTON_A, True)
+            game.update()
+            self._post_button(i, pygame.CONTROLLER_BUTTON_A, False)
+            game.update()
+        self.assertEqual(len(game.players), pads)
+
+    def _open_settings(self, game, pads):
+        if pads == 0:
+            self._post_key(pygame.K_c, True)
+            game.update()
+            self._post_key(pygame.K_c, False)
+            game.update()
+        else:
+            self._post_button(0, pygame.CONTROLLER_BUTTON_Y, True)
+            game.update()
+            self._post_button(0, pygame.CONTROLLER_BUTTON_Y, False)
+            game.update()
+        self.assertEqual(game.state, "settings")
+        self.assertEqual(game.menu_i, 0)
+
+    def _cpu_row_edges(self, game, pads):
+        game.menu_i = 0
+        kinds = ("key", "button", "hat", "axis") if pads else ("key",)
+        for kind in kinds:
+            before = game._cpu_count()
+            humans = sum(1 for p in game.players if not getattr(p, "is_cpu", False))
+            cap = min(3, 4 - humans)
+            self._tap_axis(game, kind, 1)
+            self.assertEqual(game._cpu_count(), min(cap, before + 1))
+            self._tap_axis(game, kind, -1)
+            self.assertEqual(game._cpu_count(), before)
+        # A full couch cannot grow another CPU, and must not spin forever.
+        if pads == 4:
+            game.menu_i = 0
+            self._tap_axis(game, "button", 1)
+            self.assertEqual(game._cpu_count(), 0)
+
+    def _rails(self, game, pads):
+        kind = "key" if pads == 0 else "hat"
+        game.menu_i = game._settings_rows().index("diff")
+        start = game.settings["cpu_diff"]
+        for _ in range(3):
+            self._tap_axis(game, kind, 1)
+        self.assertEqual(game.settings["cpu_diff"], start)
+        for _ in range(3):
+            self._tap_axis(game, kind, -1)
+        self.assertEqual(game.settings["cpu_diff"], start)
+        game.menu_i = game._settings_rows().index("rounds")
+        for _ in range(12):
+            self._tap_axis(game, kind, -1)
+        self.assertEqual(game.settings["rounds"], 1)
+        for _ in range(12):
+            self._tap_axis(game, kind, 1)
+        self.assertEqual(game.settings["rounds"], 7)
+        game.menu_i = game._settings_rows().index("scroll")
+        from kultakiri.settings import SCROLL_STEPS
+        for _ in range(8):
+            self._tap_axis(game, kind, -1)
+        self.assertEqual(game.settings["scroll0"], SCROLL_STEPS[0])
+        for _ in range(8):
+            self._tap_axis(game, kind, 1)
+        self.assertEqual(game.settings["scroll0"], SCROLL_STEPS[-1])
+        game.menu_i = game._settings_rows().index("sfx")
+        for _ in range(15):
+            self._tap_axis(game, kind, -1)
+        self.assertEqual(game.settings["sfx_vol"], 0)
+        for _ in range(15):
+            self._tap_axis(game, kind, 1)
+        self.assertEqual(game.settings["sfx_vol"], 10)
+
+    def _leave_and_start(self, game, pads):
+        humans = sum(1 for p in game.players if not getattr(p, "is_cpu", False))
+        game.menu_i = 0
+        if game.state != "settings":
+            game.goto("settings")
+        while len(game.players) < 2 and game._cpu_count() < min(3, 4 - humans):
+            self._tap_axis(game, "key", 1)
+        self._post_key(pygame.K_BACKSPACE, True)
+        game.update()
+        self._post_key(pygame.K_BACKSPACE, False)
+        game.update()
+        self.assertEqual(game.state, "lobby")
+        self._post_key(pygame.K_RETURN, True)
+        game.update()
+        self._post_key(pygame.K_RETURN, False)
+        game.update()
+
+    def _tap_axis(self, game, kind, direction):
+        self._axis_event(kind, direction, True)
+        game.update()
+        self._axis_event(kind, direction, False)
+        game.update()
+
+    def _axis_event(self, kind, direction, down):
+        if kind == "key":
+            key = pygame.K_RIGHT if direction > 0 else pygame.K_LEFT
+            self._post_key(key, down)
+        elif kind == "hat":
+            value = (0, 0) if not down else ((1 if direction > 0 else -1), 0)
+            pygame.event.post(pygame.event.Event(
+                pygame.JOYHATMOTION, instance_id=0, hat=0, value=value,
+            ))
+        elif kind == "axis":
+            value = 0.0 if not down else (1.0 if direction > 0 else -1.0)
+            pygame.event.post(pygame.event.Event(
+                pygame.JOYAXISMOTION, instance_id=0, axis=0, value=value,
+            ))
+        else:
+            button = pygame.CONTROLLER_BUTTON_DPAD_RIGHT if direction > 0 else pygame.CONTROLLER_BUTTON_DPAD_LEFT
+            et = pygame.CONTROLLERBUTTONDOWN if down else pygame.CONTROLLERBUTTONUP
+            pygame.event.post(pygame.event.Event(et, instance_id=0, button=button))
+
+    def _post_key(self, key, down):
+        et = pygame.KEYDOWN if down else pygame.KEYUP
+        pygame.event.post(pygame.event.Event(et, key=key))
+
+    def _post_button(self, instance, button, down):
+        et = pygame.CONTROLLERBUTTONDOWN if down else pygame.CONTROLLERBUTTONUP
+        pygame.event.post(pygame.event.Event(et, instance_id=instance, button=button))
+
+    def _assert_settings_sane(self, game, pads):
+        from kultakiri.settings import DIFFS, FREQS, RAMPS, SCROLL_STEPS
+        humans = sum(1 for p in game.players if not getattr(p, "is_cpu", False))
+        self.assertGreaterEqual(game._cpu_count(), 0)
+        self.assertLessEqual(game._cpu_count(), min(3, 4 - humans))
+        self.assertLessEqual(len(game.players), 4)
+        self.assertIn(game.settings["cpu_diff"], DIFFS)
+        self.assertGreaterEqual(game.settings["rounds"], 1)
+        self.assertLessEqual(game.settings["rounds"], 7)
+        self.assertIn(game.settings["scroll0"], SCROLL_STEPS)
+        self.assertIn(game.settings["ramp"], RAMPS)
+        self.assertIn(game.settings["power_freq"], FREQS)
+        self.assertGreaterEqual(game.settings["sfx_vol"], 0)
+        self.assertLessEqual(game.settings["sfx_vol"], 10)
+        self.assertGreaterEqual(game.settings["music_vol"], 0)
+        self.assertLessEqual(game.settings["music_vol"], 10)
+        self.assertIsInstance(game.settings["fullscreen"], bool)
+        self.assertEqual(humans, pads)
+
+    def _dpad_button_raises_valueerror(self, screen):
+        from kultakiri.game import Game
+        from kultakiri.settings import settings_path
+        self._wipe_settings(settings_path())
+        game = Game(screen)
+        pad = Pad("gc", BoomDpad(), iid=0)
+        game.pads[pad.id] = pad
+        game.goto("settings")
+        game.menu_i = 0
+        self._post_button(0, pygame.CONTROLLER_BUTTON_DPAD_RIGHT, True)
+        game.update()
+        self._post_button(0, pygame.CONTROLLER_BUTTON_DPAD_RIGHT, False)
+        game.update()
+        self.assertEqual(game._cpu_count(), 1)
+        self.assertEqual(game.state, "settings")
+
+
+class BoomDpad(FakeGC):
+    """PS4-style failure: SDL refuses the d-pad button index."""
+
+    def get_button(self, i):
+        if i in (
+            pygame.CONTROLLER_BUTTON_DPAD_UP,
+            pygame.CONTROLLER_BUTTON_DPAD_DOWN,
+            pygame.CONTROLLER_BUTTON_DPAD_LEFT,
+            pygame.CONTROLLER_BUTTON_DPAD_RIGHT,
+        ):
+            raise ValueError("value too large to convert to SDL_GameControllerButton")
+        return i in self.buttons
 
 
 class BootTests(unittest.TestCase):

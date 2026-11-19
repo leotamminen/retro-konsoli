@@ -1,0 +1,3544 @@
+#!/usr/bin/env python3
+# KULTAKIRI - rento 2-4 pelaajan juoksupeli Batoceralle (pygame 2).
+# Yksi tiedosto, ei assetteja. Kopioi kansioon /userdata/roms/pygame/
+# Versio tulee buildin aikana version.jsonista.
+def load_version():
+    return '0.3.1'
+
+
+# ---- pixelfont.py ----
+# Shared bitmap font from Tuonelan Polku.
+# Hand-drawn for this repo (original artwork, no third-party license).
+# Body is 7px caps / 5px lowercase; tall=True stretches that for a TV at 320x180.
+# Saunakisa and Kultakiri both import this module. Game build scripts embed the file.
+
+# ---------------- pixel font ----------------
+# Hand-drawn bitmap font. Spec per glyph: "accent | body | descender", rows separated by spaces.
+# body = 7 rows (cap height) or 5 rows (x-height, padded on top). Lowercase is 4 px wide, caps 5.
+# Tall variant: body rows are stretched to cap 9 / x-height 7 (taller lowercase = easier to read).
+import pygame
+_GL = {
+ "A": "|.###. #...# #...# ##### #...# #...# #...#|", "B": "|####. #...# #...# ####. #...# #...# ####.|",
+ "C": "|.###. #...# #.... #.... #.... #...# .###.|", "D": "|####. #...# #...# #...# #...# #...# ####.|",
+ "E": "|##### #.... #.... ####. #.... #.... #####|", "F": "|##### #.... #.... ####. #.... #.... #....|",
+ "G": "|.###. #...# #.... #.### #...# #...# .####|", "H": "|#...# #...# #...# ##### #...# #...# #...#|",
+ "I": "|### .#. .#. .#. .#. .#. ###|", "J": "|..### ...#. ...#. ...#. ...#. #..#. .##..|",
+ "K": "|#...# #..#. #.#.. ##... #.#.. #..#. #...#|", "L": "|#.... #.... #.... #.... #.... #.... #####|",
+ "M": "|#...# ##.## #.#.# #.#.# #...# #...# #...#|", "N": "|#...# ##..# ##..# #.#.# #..## #..## #...#|",
+ "O": "|.###. #...# #...# #...# #...# #...# .###.|", "P": "|####. #...# #...# ####. #.... #.... #....|",
+ "Q": "|.###. #...# #...# #...# #.#.# #..#. .##.#|", "R": "|####. #...# #...# ####. #.#.. #..#. #...#|",
+ "S": "|.#### #.... #.... .###. ....# ....# ####.|", "T": "|##### ..#.. ..#.. ..#.. ..#.. ..#.. ..#..|",
+ "U": "|#...# #...# #...# #...# #...# #...# .###.|", "V": "|#...# #...# #...# #...# .#.#. .#.#. ..#..|",
+ "W": "|#...# #...# #...# #.#.# #.#.# ##.## #...#|", "X": "|#...# #...# .#.#. ..#.. .#.#. #...# #...#|",
+ "Y": "|#...# #...# .#.#. ..#.. ..#.. ..#.. ..#..|", "Z": "|##### ....# ...#. ..#.. .#... #.... #####|",
+ "Ä": ".#.#. .....|.###. #...# #...# ##### #...# #...# #...#|", "Ö": ".#.#. .....|.###. #...# #...# #...# #...# #...# .###.|",
+ "Å": "..#.. .#.#.|..#.. .#.#. #...# ##### #...# #...# #...#|", "Ü": ".#.#. .....|#...# #...# #...# #...# #...# #...# .###.|",
+ "É": "...#. ..#..|##### #.... #.... ####. #.... #.... #####|",
+ "a": "|.##. ...# .### #..# .###|", "b": "|#... #... ###. #..# #..# #..# ###.|", "c": "|.### #... #... #... .###|",
+ "d": "|...# ...# .### #..# #..# #..# .###|", "e": "|.##. #..# #### #... .###|", "f": "|.## #.. ### #.. #.. #.. #..|",
+ "g": "|.### #..# #..# #..# .###|...# ###.", "h": "|#... #... ###. #..# #..# #..# #..#|", "i": "|# . # # # # #|",
+ "j": "|.# .. .# .# .# .# .#|.# #.", "k": "|#... #... #..# #.#. ##.. #.#. #..#|", "l": "|#. #. #. #. #. #. .#|",
+ "m": "|####. #.#.# #.#.# #.#.# #.#.#|", "n": "|###. #..# #..# #..# #..#|", "o": "|.##. #..# #..# #..# .##.|",
+ "p": "|###. #..# #..# #..# ###.|#... #...", "q": "|.### #..# #..# #..# .###|...# ...#", "r": "|#.## ##.. #... #... #...|",
+ "s": "|.### #... .##. ...# ###.|", "t": "|.#. .#. ### .#. .#. .#. ..#|", "u": "|#..# #..# #..# #..# .###|",
+ "v": "|#...# #...# #...# .#.#. ..#..|", "w": "|#...# #...# #.#.# #.#.# .#.#.|", "x": "|#...# .#.#. ..#.. .#.#. #...#|",
+ "y": "|#..# #..# #..# #..# .###|...# .##.", "z": "|#### ...# .##. #... ####|",
+ "ä": "|#..# .... .##. ...# .### #..# .###|", "ö": "|#..# .... .##. #..# #..# #..# .##.|",
+ "å": ".##. #..#|.##. .... .##. ...# .### #..# .###|", "ü": "|#..# .... #..# #..# #..# #..# .###|",
+ "é": "|..#. .#.. .##. #..# #### #... .###|",
+ "0": "|.###. #...# #..## #.#.# ##..# #...# .###.|", "1": "|.#. ##. .#. .#. .#. .#. ###|",
+ "2": "|.###. #...# ....# ...#. ..#.. .#... #####|", "3": "|####. ....# ....# .###. ....# ....# ####.|",
+ "4": "|...#. ..##. .#.#. #..#. ##### ...#. ...#.|", "5": "|##### #.... ####. ....# ....# #...# .###.|",
+ "6": "|..##. .#... #.... ####. #...# #...# .###.|", "7": "|##### ....# ...#. ..#.. .#... .#... .#...|",
+ "8": "|.###. #...# #...# .###. #...# #...# .###.|", "9": "|.###. #...# #...# .#### ....# ...#. .##..|",
+ ".": "|. . . . . . #|", ",": "|.. .. .. .. .. .. .#|#.", ":": "|. . . # . . #|", ";": "|.. .. .. .# .. .. .#|#.",
+ "!": "|# # # # # . #|", "?": "|.##. #..# ...# ..#. .#.. .... .#..|", "'": "|# # . . . . .|", '"': "|#.# #.# ... ... ... ... ...|",
+ "-": "|... ... ... ### ... ... ...|", "+": "|... ... .#. ### .#. ... ...|", "=": "|... ... ### ... ### ... ...|",
+ "/": "|..# ..# .#. .#. .#. #.. #..|", "(": "|.# #. #. #. #. #. .#|", ")": "|#. .# .# .# .# .# #.|",
+ "[": "|## #. #. #. #. #. ##|", "]": "|## .# .# .# .# .# ##|", "<": "|... ..# .#. #.. .#. ..# ...|", ">": "|... #.. .#. ..# .#. #.. ...|",
+ "%": "|##..# ##.#. ...#. ..#.. .#... .#.## #..##|", "*": "|... #.# .#. #.# ... ... ...|", "_": "|.... .... .... .... .... .... ####|",
+ "#": "|.#.#. ##### .#.#. .#.#. .#.#. ##### .#.#.|", "&": "|.##.. #..#. .##.. .#... #.#.# #..#. .##.#|",
+ "x": "|#...# .#.#. ..#.. .#.#. #...#|", "\u2013": "|.... .... .... #### .... .... ....|", "\u00b7": "|. . . # . . .|",
+ "|": "|# # # # # # #|#", "\u2026": "|..... ..... ..... ..... ..... ..... #.#.#|",
+}
+_BOLD = {   # tall+bold glyphs that cannot be thickened automatically (9 rows, drawn as is)
+ "M": "##...## ###.### ##.#.## ##.#.## ##...## ##...## ##...## ##...## ##...##",
+ "W": "##...## ##...## ##...## ##...## ##...## ##.#.## ##.#.## ###.### ##...##",
+ "m": "........ ........ #######. ##.##.## ##.##.## ##.##.## ##.##.## ##.##.## ##.##.##",
+ "w": "....... ....... ##...## ##...## ##...## ##.#.## ##.#.## ##.#.## .##.##.",
+}
+_LOWER = set("abcdefghijklmnopqrstuvwxyzäöåüé")
+_CAPMAP = [0, 1, 1, 2, 3, 4, 5, 5, 6]          # 7 cap rows -> 9
+_LOWMAP = [0, 1, 2, 3, 3, 4, 5, 5, 6]          # 2 ascender rows + 5 x-height rows -> 2 + 7
+def _parse(spec):
+    acc, body, desc = (spec.split("|") + ["", ""])[:3]
+    acc = acc.split(); body = body.split(); desc = desc.split()
+    if len(body) == 5: body = ["." * len(body[0])] * 2 + body
+    return acc, body, desc
+class PixelFont:
+    """Drop-in for the few pygame.font.Font methods the game uses: size(), render(), get_height(), get_linesize()."""
+    def __init__(s, tall=False, scale=1, bold=False, space=3):
+        s.tall = tall; s.sc = scale; s.bold = bold; s.space = space
+        s.cap = 9 if tall else 7; s.rows = 2 + s.cap + 2
+        s.glyphs = {}
+        for ch, spec in _GL.items(): s.glyphs[ch] = s._build(ch, spec)
+        s.cache = {};s.surfaces={};s.gsurfaces={}
+    def _build(s, ch, spec):
+        if s.bold and s.tall and ch in _BOLD:
+            rows = ["", ""] + _BOLD[ch].split(); w = max(len(r) for r in rows)
+            return w, [(x, y) for y, r in enumerate(rows) for x, c in enumerate(r) if c == "#"]
+        acc, body, desc = _parse(spec)
+        w = max(len(r) for r in acc + body + desc)
+        if s.tall:
+            mp = _LOWMAP if ch in _LOWER else _CAPMAP
+            body = [body[i] for i in mp]
+        rows = ["." * w] * (2 - len(acc)) + acc + body + desc
+        px = [(x, y) for y, r in enumerate(rows) for x, c in enumerate(r) if c == "#"]
+        if s.bold:     # thicken to the right, but never close a 1 px gap (m, w, M, W, # stay readable)
+            st = set(px); px = sorted(st | {(x + 1, y) for x, y in st if (x + 2, y) not in st}); w += 1
+        return w, px
+    def get_height(s): return s.rows * s.sc
+    def get_linesize(s): return (s.rows + 1) * s.sc
+    def _g(s, ch):
+        g = s.glyphs.get(ch)
+        if g is None: g = s.glyphs.get(ch.upper()) or s.glyphs["?"]
+        return g
+    def size(s, text):
+        w = 0
+        for i, ch in enumerate(str(text)):
+            w += s.space if ch == " " else s._g(ch)[0] + 1
+        if text and str(text)[-1] != " ": w -= 1
+        return max(0, w) * s.sc, s.rows * s.sc
+    def render(s, text, aa=False, color=(255, 255, 255), bg=None):
+        text = str(text); w, h = s.size(text)
+        surf = pygame.Surface((max(1, w), h), pygame.SRCALPHA)
+        col = tuple(color[:3]) + (255,); sc = s.sc; x = 0
+        for ch in text:
+            if ch == " ": x += s.space; continue
+            gw, px = s._g(ch)
+            for (gx, gy) in px: surf.fill(col, ((x + gx) * sc, gy * sc, sc, sc))
+            x += gw + 1
+        return surf
+
+
+# ---- const.py ----
+# Shared numbers. Jump reachability tests and the chunk designer both use these.
+FPS = 60
+W, H = 320, 180
+PW, PH = 12, 16
+
+GRAV = 0.28
+JUMP_V = -5.15
+JUMP_CUT = 0.5
+MAX_FALL = 5.1
+GLIDE_FALL = 0.62
+TILE = 16
+MAX_RISE = TILE * 2          # one step is never more than two tiles
+RUN = 1.82
+# The screen is always a little faster than a normal run, so a full sprint
+# drifts toward the left edge and can never catch the right edge.
+# Only the speed powerup outruns the scroll.
+SPEED_RUN = 2.58
+ACCEL = 0.62
+COYOTE = 6
+JUMP_BUF = 6
+SLOW_MUL = 0.94
+SHORT_HOLD = 9
+CRUMBLE_TIME = 120
+
+# A normal sprint still loses a little ground, so the right edge stays out of
+# reach. The start is gentler than 0.2 and the camera only hurries later.
+SCROLL0 = 1.85               # RUN + 0.03. Gentler than the 0.2 start of 1.88.
+SCROLL_MAX = 1.91            # RUN + 0.09
+SCROLL_ACC = 0.000008
+
+CH_W = 208
+EY = 136
+LEAD = 18
+JUMP_HOLD = 34
+FALL_Y = 196
+BUMP_VX = 1.45
+MAGNET_R = 56
+MAGNET_PULL = 3.1
+
+FINISH_X = 8600
+ROUNDS = 3
+GHOST_FRAMES = 270
+INV_HAZARD = 28
+STUN_HAZARD = 14
+
+COIN_PTS = 10
+DIST_DIV = 24
+WIN_PTS = 350
+
+DUR = {
+    "double": 360,
+    "speed": 300,
+    "shield": 420,
+    "magnet": 360,
+    "slow": 90,
+    "glide": 300,
+}
+POWER_KINDS = ("double", "speed", "shield", "magnet", "slow", "glide")
+
+# Body, outline. Four players, identical controls, distinct colours.
+PCOLORS = (
+    ((232, 72, 64), (92, 24, 28)),
+    ((64, 148, 240), (18, 48, 112)),
+    ((72, 196, 96), (20, 96, 44)),
+    ((244, 196, 48), (148, 96, 16)),
+)
+PNAMES = ("PUNAINEN", "SININEN", "VIHREÄ", "KELTAINEN")
+
+POWER_COLORS = {
+    "double": (72, 168, 255),
+    "speed": (255, 148, 40),
+    "shield": (64, 228, 216),
+    "magnet": (228, 72, 96),
+    "slow": (176, 112, 255),
+    "glide": (110, 220, 140),
+}
+
+# ---- font.py ----
+# Kultakiri text uses the shared Tuonelan Polku bitmap font.
+import os
+import sys
+
+import pygame
+
+_common = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "common"))
+if _common not in sys.path:
+    sys.path.insert(0, _common)
+
+_CACHE = {}
+
+
+def get_font(scale=1, tall=None, bold=None):
+    if tall is None:
+        tall = True
+    if bold is None:
+        bold = scale >= 2
+    key = (int(scale), bool(tall), bool(bold))
+    font = _CACHE.get(key)
+    if font is None:
+        font = PixelFont(tall=tall, scale=int(scale), bold=bold, space=3)
+        _CACHE[key] = font
+    return font
+
+
+def has_glyph(ch):
+    if ch == " ":
+        return True
+    font = get_font(1)
+    return ch in font.glyphs or ch.upper() in font.glyphs
+
+
+class Font:
+    """Kept so older call sites can still pass a font object into blit()."""
+
+    def __init__(self, scale=1):
+        self.scale = scale
+
+    def size(self, text, scale=None):
+        sc = self.scale if scale is None else scale
+        return get_font(sc).size(text)
+
+
+def blit(surf, font, text, x, y, color, scale=1, center=False, shadow=True):
+    if not text:
+        return
+    sc = scale
+    face = get_font(sc)
+    img = face.render(text, False, color)
+    if center:
+        x -= img.get_width() // 2
+        y -= img.get_height() // 2
+    if shadow:
+        sh = face.render(text, False, (32, 18, 28))
+        surf.blit(sh, (x + max(1, sc // 2), y + max(1, sc // 2)))
+    surf.blit(img, (x, y))
+
+# ---- text.py ----
+# Finnish UI. Every glyph used here exists in font.py.
+
+FI = {
+    "title": "KULTAKIRI",
+    "tag": "VIIMEINEN JUOKSIJA VOITTAA",
+    "press": "PAINA X",
+    "join": "LIITY",
+    "need": "TARVITAAN 2 PELAAJAA",
+    "start_hint": "OPTIONS: ALOITA",
+    "legend_btn": "KOLMIO: ASETUKSET",
+    "cpu_add": "O: LISÄÄ CPU",
+    "cpu_del": "NELIÖ: POISTA CPU",
+    "cpu_tag": "CPU",
+    "settings": "ASETUKSET",
+    "opt_cpu": "CPU PELAAJIA",
+    "opt_diff": "CPU VAIKEUS",
+    "opt_rounds": "ERIÄ",
+    "opt_scroll": "ALKUNOPEUS",
+    "opt_ramp": "KIIHTYMINEN",
+    "opt_freq": "TEHOSTEITA",
+    "opt_sfx": "ÄÄNET",
+    "opt_music": "MUSIIKKI",
+    "opt_full": "KOKO RUUTU",
+    "opt_powers": "TEHOSTEET",
+    "opt_legend": "OHJE",
+    "opt_back": "TAKAISIN",
+    "diff_helppo": "HELPPO",
+    "diff_normaali": "NORMAALI",
+    "diff_vaikea": "VAIKEA",
+    "ramp_hidas": "HIDAS",
+    "ramp_normaali": "NORMAALI",
+    "ramp_nopea": "NOPEA",
+    "freq_harva": "HARVA",
+    "freq_normaali": "NORMAALI",
+    "freq_tihea": "TIHEÄ",
+    "on": "PÄÄLLÄ",
+    "off": "POIS",
+    "leave_hint": "SHARE: POISTU",
+    "quit_hint": "SHARE+OPTIONS: LOPETA",
+    "round": "ERÄ %d/%d",
+    "go": "NYT!",
+    "ghost": "HAAMU",
+    "out": "ULOS",
+    "pad": "OHJAIN IRTOSI",
+    "win": "%s VEI ERÄN",
+    "draw": "TASAPELI",
+    "board": "PISTETAULU",
+    "coins": "KOL",
+    "meters": "M",
+    "total": "YHT",
+    "next": "X: SEURAAVA ERÄ",
+    "results": "TULOKSET",
+    "champ": "%s ON KULTAKUNINGAS",
+    "rematch": "X: UUSINTA",
+    "back_lobby": "SHARE: AULAAN",
+    "paused": "TAUKO",
+    "resume": "JATKA",
+    "to_lobby": "AULAAN",
+    "quit": "LOPETA",
+    "quitting": "LOPETETAAN",
+    "legend": "TEHOSTEET",
+    "back": "X: TAKAISIN",
+    "controls": "X HYPÄÄ  SAUVA LIIKUTTAA",
+    "p_double": "KAKSOISHYPPY",
+    "p_speed": "VAUHTI",
+    "p_shield": "KILPI",
+    "p_magnet": "MAGNEETTI",
+    "p_slow": "HIDASTUS",
+    "p_glide": "LIITO",
+    "d_double": "TOINEN HYPPY ILMASSA",
+    "d_speed": "JUOKSET NOPEAMMIN",
+    "d_shield": "ESTÄÄ YHTEEN PIIKKIIN",
+    "d_magnet": "KOLIKOT TULEVAT LUOKSE",
+    "d_slow": "MUUT HIDASTUVAT",
+    "d_glide": "PIDÄ X NIIN LIIDÄT",
+    "finish": "MAALI",
+}
+
+
+def tr(key, *args):
+    text = FI[key]
+    if args:
+        text = text % args
+    return text
+
+
+def pname(idx):
+    return PNAMES[idx]
+
+# ---- settings.py ----
+# Small JSON file next to the game. A missing or broken file falls back to defaults.
+import json
+import os
+
+
+DIFFS = ("helppo", "normaali", "vaikea")
+RAMPS = {"hidas": 0.000004, "normaali": 0.000008, "nopea": 0.000016}
+FREQS = {"harva": 0.45, "normaali": 0.75, "tihea": 1.0}
+SCROLL_STEPS = (1.85, 1.88, 1.91, 1.96)
+
+DEFAULTS = {
+    "cpu_players": 0,
+    "cpu_diff": "normaali",
+    "rounds": 3,
+    "scroll0": 1.85,
+    "ramp": "normaali",
+    "power_freq": "normaali",
+    "powers": {k: True for k in POWER_KINDS},
+    "sfx_vol": 8,
+    "music_vol": 5,
+    "fullscreen": True,
+}
+
+
+def game_dir():
+    here = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(here) == "kultakiri":
+        here = os.path.dirname(here)
+    return here
+
+
+def settings_path():
+    return os.path.join(game_dir(), "kultakiri_settings.json")
+
+
+def crash_log_path():
+    return os.path.join(game_dir(), "kultakiri_crash.log")
+
+
+def _clamp_int(value, lo, hi, default):
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, n))
+
+
+def load_settings(path=None):
+    path = path or settings_path()
+    data = {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            data = loaded
+    except (OSError, ValueError, TypeError):
+        data = {}
+    out = dict(DEFAULTS)
+    out["cpu_players"] = _clamp_int(data.get("cpu_players"), 0, 3, 0)
+    diff = data.get("cpu_diff")
+    out["cpu_diff"] = diff if diff in DIFFS else "normaali"
+    out["rounds"] = _clamp_int(data.get("rounds"), 1, 7, 3)
+    try:
+        scroll = float(data.get("scroll0", out["scroll0"]))
+    except (TypeError, ValueError):
+        scroll = out["scroll0"]
+    # A normal run must never catch the camera, whatever was saved.
+    out["scroll0"] = max(RUN + 0.02, min(2.2, scroll))
+    ramp = data.get("ramp")
+    out["ramp"] = ramp if ramp in RAMPS else "normaali"
+    freq = data.get("power_freq")
+    out["power_freq"] = freq if freq in FREQS else "normaali"
+    powers = dict(DEFAULTS["powers"])
+    raw = data.get("powers")
+    if isinstance(raw, dict):
+        for key in POWER_KINDS:
+            if key in raw:
+                powers[key] = bool(raw[key])
+    out["powers"] = powers
+    out["sfx_vol"] = _clamp_int(data.get("sfx_vol"), 0, 10, 8)
+    out["music_vol"] = _clamp_int(data.get("music_vol"), 0, 10, 5)
+    out["fullscreen"] = bool(data.get("fullscreen", True)) if "fullscreen" in data else True
+    return out
+
+
+def save_settings(data, path=None):
+    path = path or settings_path()
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except OSError:
+        return False
+    return True
+
+# ---- input.py ----
+# One pad, one player. SDL GameController first; raw hid-playstation if it is not mapped.
+# Cross and Circle both jump. In the lobby Circle adds a CPU and Square removes one.
+# Triangle opens settings, Options starts, Share goes back.
+# The same layout for every player. Instance id, never a hard-coded joystick 0.
+import pygame
+
+
+def blank():
+    return {"x": 0.0, "y": 0.0, "jump": False, "circle": False, "start": False, "back": False, "alt": False, "menu": False}
+
+
+class Pad:
+    # Linux hid-playstation / DualShock: Cross, Circle, Square, Triangle, L1, R1, L2, R2, Share, Options.
+    RAW_JUMP = 0
+    RAW_CIRCLE = 1
+    RAW_TRIANGLE = 3
+    RAW_SHARE = 8
+    RAW_OPTIONS = 9
+
+    def __init__(self, kind, dev=None, iid=None, joy=None):
+        self.kind = kind
+        self.dev = dev
+        self.joy = joy
+        self.prev = blank()
+        self.cur = blank()
+        self.desired = blank()
+        self.script = kind == "script"
+        self.auto = False
+        self.skill = 1.0
+        # Events, for pads whose d-pad never shows up in get_button/get_hat
+        # (and for tests that post into the queue). Device state still wins
+        # when it already reports a direction.
+        self.held_keys = set()
+        self.hat = (0, 0)
+        self.axis_ev = {}
+        self.gc_buttons = set()
+        self.js_buttons = set()
+        if kind == "kb":
+            self.id = "kb"
+        elif iid is not None:
+            self.id = "js%d" % int(iid)
+        else:
+            self.id = "pad%d" % id(self)
+
+    def on_key(self, key, down):
+        if down:
+            self.held_keys.add(key)
+        else:
+            self.held_keys.discard(key)
+
+    def on_joy(self, ev):
+        t = ev.type
+        if t == pygame.JOYHATMOTION:
+            value = getattr(ev, "value", (0, 0)) or (0, 0)
+            try:
+                hx, hy = value
+            except (TypeError, ValueError):
+                hx, hy = 0, 0
+            # Hat +y is up. Our y is +1 down, same as the left stick.
+            self.hat = (int(hx), -int(hy))
+        elif t == pygame.JOYAXISMOTION:
+            try:
+                val = float(ev.value)
+            except (TypeError, ValueError):
+                return
+            if abs(val) > 1.5:
+                val = val / 32768.0
+            self.axis_ev[int(ev.axis)] = val
+        elif t in (pygame.CONTROLLERBUTTONDOWN, pygame.CONTROLLERBUTTONUP):
+            self._set_button(self.gc_buttons, ev, t == pygame.CONTROLLERBUTTONDOWN)
+        elif t in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP):
+            self._set_button(self.js_buttons, ev, t == pygame.JOYBUTTONDOWN)
+
+    def _set_button(self, bucket, ev, down):
+        try:
+            button = int(ev.button)
+        except (TypeError, ValueError):
+            return
+        if down:
+            bucket.add(button)
+        else:
+            bucket.discard(button)
+
+    def _event_stick(self):
+        """Direction from the event queue, used when the device read is neutral."""
+        x = float(self.axis_ev.get(0, 0.0))
+        y = float(self.axis_ev.get(1, 0.0))
+        hx, hy = self.hat
+        if hx or hy:
+            x, y = float(hx), float(hy)
+        if pygame.CONTROLLER_BUTTON_DPAD_LEFT in self.gc_buttons:
+            x = -1.0
+        if pygame.CONTROLLER_BUTTON_DPAD_RIGHT in self.gc_buttons:
+            x = 1.0
+        if pygame.CONTROLLER_BUTTON_DPAD_UP in self.gc_buttons:
+            y = -1.0
+        if pygame.CONTROLLER_BUTTON_DPAD_DOWN in self.gc_buttons:
+            y = 1.0
+        return x, y
+
+    def _merge_buttons(self, c):
+        gc, js = self.gc_buttons, self.js_buttons
+        if pygame.CONTROLLER_BUTTON_A in gc or Pad.RAW_JUMP in js:
+            c["jump"] = True
+        if pygame.CONTROLLER_BUTTON_B in gc or Pad.RAW_CIRCLE in js:
+            c["circle"] = True
+            c["jump"] = True
+        if pygame.CONTROLLER_BUTTON_X in gc or 2 in js:
+            c["menu"] = True
+        if pygame.CONTROLLER_BUTTON_Y in gc or Pad.RAW_TRIANGLE in js:
+            c["alt"] = True
+        if pygame.CONTROLLER_BUTTON_START in gc or Pad.RAW_OPTIONS in js:
+            c["start"] = True
+        if pygame.CONTROLLER_BUTTON_BACK in gc or Pad.RAW_SHARE in js:
+            c["back"] = True
+
+    def poll(self, ks):
+        c = blank()
+        try:
+            if self.kind == "kb":
+                def down(code):
+                    return bool(ks[code]) or code in self.held_keys
+                right = down(pygame.K_RIGHT) or down(pygame.K_d)
+                left = down(pygame.K_LEFT) or down(pygame.K_a)
+                down_k = down(pygame.K_DOWN) or down(pygame.K_s)
+                up = down(pygame.K_UP) or down(pygame.K_w)
+                c["x"] = float(bool(right)) - float(bool(left))
+                c["y"] = float(bool(down_k)) - float(bool(up))
+                c["circle"] = down(pygame.K_z)
+                c["jump"] = down(pygame.K_x) or down(pygame.K_SPACE) or down(pygame.K_z)
+                c["start"] = down(pygame.K_RETURN) or down(pygame.K_KP_ENTER)
+                c["back"] = down(pygame.K_BACKSPACE) or down(pygame.K_TAB)
+                c["alt"] = down(pygame.K_c)
+                c["menu"] = down(pygame.K_v)
+            elif self.kind == "gc":
+                g = self.dev
+
+                def gb(button):
+                    try:
+                        return bool(g.get_button(button))
+                    except (pygame.error, ValueError, OverflowError, SystemError, AttributeError, TypeError):
+                        return False
+
+                try:
+                    ax = g.get_axis(pygame.CONTROLLER_AXIS_LEFTX) / 32768.0
+                    ay = g.get_axis(pygame.CONTROLLER_AXIS_LEFTY) / 32768.0
+                except (pygame.error, ValueError, TypeError, ZeroDivisionError, AttributeError):
+                    ax, ay = 0.0, 0.0
+                if gb(pygame.CONTROLLER_BUTTON_DPAD_LEFT):
+                    ax = -1.0
+                if gb(pygame.CONTROLLER_BUTTON_DPAD_RIGHT):
+                    ax = 1.0
+                if gb(pygame.CONTROLLER_BUTTON_DPAD_UP):
+                    ay = -1.0
+                if gb(pygame.CONTROLLER_BUTTON_DPAD_DOWN):
+                    ay = 1.0
+                c["x"], c["y"] = ax, ay
+                c["circle"] = gb(pygame.CONTROLLER_BUTTON_B)
+                c["jump"] = gb(pygame.CONTROLLER_BUTTON_A) or gb(pygame.CONTROLLER_BUTTON_B)
+                c["start"] = gb(pygame.CONTROLLER_BUTTON_START)
+                c["back"] = gb(pygame.CONTROLLER_BUTTON_BACK)
+                c["alt"] = gb(pygame.CONTROLLER_BUTTON_Y)
+                c["menu"] = gb(pygame.CONTROLLER_BUTTON_X)
+            elif self.kind == "js":
+                j = self.dev
+                ax = j.get_axis(0) if j.get_numaxes() > 0 else 0.0
+                ay = j.get_axis(1) if j.get_numaxes() > 1 else 0.0
+                if j.get_numhats() > 0:
+                    hx, hy = j.get_hat(0)
+                    if hx:
+                        ax = float(hx)
+                    if hy:
+                        ay = -float(hy)
+                c["x"], c["y"] = ax, ay
+                nb = j.get_numbuttons()
+
+                def b(i):
+                    return nb > i and bool(j.get_button(i))
+
+                c["circle"] = b(Pad.RAW_CIRCLE)
+                c["jump"] = b(Pad.RAW_JUMP) or b(Pad.RAW_CIRCLE)
+                c["menu"] = b(2)
+                c["alt"] = b(Pad.RAW_TRIANGLE)
+                c["back"] = b(Pad.RAW_SHARE)
+                c["start"] = b(Pad.RAW_OPTIONS)
+            elif self.kind == "script":
+                c.update(self.desired)
+                c["x"] = float(c.get("x", 0.0))
+                c["y"] = float(c.get("y", 0.0))
+            ex, ey = self._event_stick()
+            if abs(c["x"]) < 0.28 and abs(ex) >= 0.28:
+                c["x"] = ex
+            if abs(c["y"]) < 0.45 and abs(ey) >= 0.45:
+                c["y"] = ey
+            self._merge_buttons(c)
+        except (pygame.error, SystemError, AttributeError, ValueError, TypeError, OverflowError):
+            c = blank()
+        if abs(c["x"]) < 0.28:
+            c["x"] = 0.0
+        if abs(c["y"]) < 0.45:
+            c["y"] = 0.0
+        self.prev = self.cur
+        self.cur = c
+
+    def pressed(self, key):
+        return bool(self.cur.get(key)) and not bool(self.prev.get(key))
+
+    def held(self, key):
+        return bool(self.cur.get(key))
+
+
+class ScriptPad(Pad):
+    def __init__(self, name):
+        Pad.__init__(self, "script", iid=None)
+        self.id = name
+        self.script = True
+
+# ---- physics.py ----
+# One jump model shared by players, bots, the fairness proof and the tests.
+import math
+import random
+
+
+
+class Body:
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+        self.vx = 0.0
+        self.vy = 0.0
+        self.w = PW
+        self.h = PH
+        self.on_ground = False
+        self.coyote = 0
+        self.buf = 0
+        self.air_jumps = 0
+        self.air_max = 0
+        self.slow = False
+        self.glide = False
+        self.speed = False
+        self.stun = 0
+        self.was_jump = False
+
+    def feet(self):
+        return self.y + self.h
+
+    def copy_flags(self, other):
+        self.slow = other.slow
+        self.glide = other.glide
+        self.speed = other.speed
+        self.air_max = other.air_max
+
+
+def move_toward(v, target, step):
+    if v < target:
+        return min(target, v + step)
+    if v > target:
+        return max(target, v - step)
+    return v
+
+
+def support_at(x, feet, solids, slop=2.6):
+    for px, top, pw in solids:
+        if px - 1 <= x <= px + pw + 1 and abs(feet - top) <= slop:
+            return True
+    return False
+
+
+def step_body(b, ix, jump_held, jump_pressed, solids):
+    """Advance one frame. solids are one-way platforms (x, top, w).
+
+    Returns "jump", "airjump" or None. Vertical overlap with another player is
+    not a solid: callers never pass players in as platforms, so nobody can
+    stomp or stand on anybody else.
+    """
+    if b.stun > 0:
+        b.stun -= 1
+        ix = 0.0
+        jump_pressed = False
+        jump_held = False
+    if b.on_ground:
+        b.coyote = COYOTE
+        b.air_jumps = b.air_max
+    elif b.coyote > 0:
+        b.coyote -= 1
+    if jump_pressed:
+        b.buf = JUMP_BUF
+    elif b.buf > 0:
+        b.buf -= 1
+
+    rate = SPEED_RUN if b.speed else RUN
+    if b.slow:
+        rate *= SLOW_MUL
+    if ix > 0.25:
+        target = rate
+    elif ix < -0.25:
+        target = -rate
+    else:
+        target = 0.0
+    accel = ACCEL * (SLOW_MUL if b.slow else 1.0)
+    b.vx = move_toward(b.vx, target, accel)
+
+    did = None
+    if b.buf > 0 and b.stun <= 0:
+        if b.coyote > 0:
+            b.vy = JUMP_V
+            b.coyote = 0
+            b.buf = 0
+            b.on_ground = False
+            did = "jump"
+        elif b.air_jumps > 0:
+            b.air_jumps -= 1
+            b.vy = JUMP_V
+            b.buf = 0
+            b.on_ground = False
+            did = "airjump"
+    released = (not jump_held) and b.was_jump
+    b.was_jump = bool(jump_held)
+    if released and b.vy < 0:
+        b.vy *= JUMP_CUT
+    if b.glide and jump_held and b.vy > GLIDE_FALL:
+        b.vy = GLIDE_FALL
+    else:
+        b.vy = min(MAX_FALL, b.vy + GRAV)
+
+    b.x += b.vx
+    prev_bottom = b.feet()
+    b.y += b.vy
+    landed = None
+    if b.vy >= 0:
+        best = None
+        left = b.x + 1
+        right = b.x + b.w - 1
+        for px, top, pw in solids:
+            if right <= px or left >= px + pw:
+                continue
+            if prev_bottom <= top + 0.9 and b.feet() >= top:
+                if best is None or top < best:
+                    best = top
+        if best is not None:
+            b.y = best - b.h
+            b.vy = 0.0
+            b.on_ground = True
+            b.air_jumps = b.air_max
+            landed = best
+        else:
+            b.on_ground = False
+    else:
+        b.on_ground = False
+    return did, landed
+
+
+def air_needed(body, solids):
+    """Falling, and no ledge close under the feet: a second jump can still save it."""
+    if body.vy < 0.2:
+        return False
+    feet = body.feet()
+    for dx in (0, 10, 18):
+        if support_at(body.x + body.w * 0.5 + dx, feet + 8, solids, slop=10):
+            return False
+    return True
+
+
+def ground_ends(body, solids, lead):
+    """True when a point `lead` px past the right side has no ledge at foot height."""
+    feet = body.feet()
+    if not support_at(body.x + body.w * 0.5, feet, solids):
+        return False
+    return not support_at(body.x + body.w + lead, feet, solids)
+
+
+def hazard_ahead(body, hazards, lead):
+    feet = body.feet()
+    x0 = body.x + 4
+    x1 = body.x + body.w + lead
+    for hx, hy, hw, hh in hazards:
+        if hx < x1 and hx + hw > x0 and hy < feet + 2 and hy + hh > body.y + 2:
+            return True
+    return False
+
+
+def next_ledge(body, solids):
+    """Nearest platform that is not the one currently under the feet."""
+    feet = body.feet()
+    best = None
+    for px, top, pw in solids:
+        if px + pw < body.x + body.w - 4:
+            continue
+        if abs(top - feet) <= 2.6 and px <= body.x + 6:
+            continue
+        if best is None or px < best[0] - 0.1 or (abs(px - best[0]) < 0.1 and top < best[1]):
+            best = (px, top, pw)
+    return best
+
+
+def ceiling_ahead(body, hazards):
+    """Hanging spikes a full jump would hit. A short hop stays under them."""
+    feet = body.feet()
+    for hx, hy, hw, hh in hazards:
+        bottom = hy + hh
+        if bottom < feet - 18 and bottom > feet - 56:
+            if hx < body.x + body.w + 40 and hx + hw > body.x - 6:
+                return True
+    return False
+
+
+def mover_dx(frame, period, amp):
+    return amp * math.sin(6.28318530718 * (frame % period) / float(period))
+
+
+def live_solids(chunk, origin, frame, crumble_timers):
+    """Static ledges plus bridges that have not crumbled and platforms that slide."""
+    out = [(origin + px, top, pw) for px, top, pw in chunk.plats]
+    timers = crumble_timers or [0] * len(getattr(chunk, "crumbles", ()))
+    for i, (x, top, w) in enumerate(getattr(chunk, "crumbles", ())):
+        if timers[i] < CRUMBLE_TIME:
+            out.append((origin + x, top, w))
+    for x, top, w, amp, period in getattr(chunk, "movers", ()):
+        out.append((origin + x + mover_dx(frame, period, amp), top, w))
+    return out
+
+
+def _threat(body, solids, hazards, lead):
+    if hazard_ahead(body, hazards, lead + 16):
+        return True
+    if not ground_ends(body, solids, lead):
+        return False
+    nxt = next_ledge(body, solids)
+    # A lower ledge is a drop: keep running and fall. Jumping would overshoot it.
+    if nxt is not None and nxt[1] > body.feet() + 8:
+        return False
+    return True
+
+
+class Pilot:
+    """Same jump choices for the fairness proof, couch bots and a dropped pad."""
+
+    def __init__(self, skill=1.0, rng=None):
+        self.skill = skill
+        self.rng = rng or random.Random(0)
+        self.hold = 0
+        self.did_air = False
+
+    def decide(self, body, solids, hazards, glide=False, air_jumps=0):
+        if body.on_ground:
+            self.did_air = False
+        pressed = False
+        held = False
+        if self.hold > 0:
+            self.hold -= 1
+            held = True
+        elif body.on_ground and _threat(body, solids, hazards, LEAD):
+            if self.rng.random() <= self.skill:
+                hop = SHORT_HOLD if ceiling_ahead(body, hazards) else JUMP_HOLD
+                self.hold = hop - 1
+                held = True
+                pressed = True
+        if (not body.on_ground) and air_jumps > 0 and not self.did_air and body.vy > 0.2:
+            # The extra jump is the recovery, so a sloppy runner still uses it.
+            if (air_needed(body, solids) or _threat(body, solids, hazards, LEAD)) and self.rng.random() <= max(self.skill, 0.92):
+                pressed = True
+                held = True
+                self.hold = max(self.hold, JUMP_HOLD // 2)
+                self.did_air = True
+        if glide and body.vy > GLIDE_FALL and not body.on_ground:
+            held = True
+        return 1.0, held, pressed
+
+
+def ghost_steer(body, solids):
+    """Stick axes for a ghost trying to settle on the nearest ledge. iy is -1 up."""
+    best = None
+    best_d = 1e9
+    cx = body.x + body.w * 0.5
+    fy = body.feet()
+    for px, top, pw in solids:
+        mx = px + pw * 0.5
+        d = abs(mx - cx) + abs(top - fy) * 1.4
+        if d < best_d:
+            best_d = d
+            best = (mx, top)
+    if best is None:
+        return 0.3, 0.4
+    mx, top = best
+    ix = 0.0 if abs(mx - cx) < 6 else (1.0 if mx > cx else -1.0)
+    if top < fy - 6:
+        iy = -1.0
+    elif top > fy + 6:
+        iy = 1.0
+    else:
+        iy = 0.0
+    return ix, iy
+
+
+def rect_hit(ax, ay, aw, ah, bx, by, bw, bh):
+    return ax < bx + bw and ax + aw > bx and ay < by + bh and ay + ah > by
+
+
+_GAP_CACHE = {}
+
+
+def measure_gap(rise=0, lead=LEAD, hold=JUMP_HOLD, speed=False):
+    """Largest gap, in pixels, a full jump can clear onto a ledge `rise` px higher.
+
+    rise > 0 means the landing ledge is above the takeoff ledge.
+    """
+    key = (int(rise), int(lead), int(hold), bool(speed))
+    hit = _GAP_CACHE.get(key)
+    if hit is not None:
+        return hit
+    lo, hi = 0, 140
+    best = 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if clears_gap(mid, rise, lead, hold, speed):
+            best = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    _GAP_CACHE[key] = best
+    return best
+
+
+def clears_gap(gap, rise, lead=LEAD, hold=JUMP_HOLD, speed=False):
+    b = Body()
+    b.x = -lead - PW
+    b.y = -PH
+    b.vx = SPEED_RUN if speed else RUN
+    b.speed = bool(speed)
+    b.on_ground = True
+    b.coyote = COYOTE
+    a_left = b.x - 30
+    solids = [(a_left, 0.0, -a_left), (float(gap), float(-rise), 120.0)]
+    for f in range(180):
+        step_body(b, 1.0, f < hold, f == 0, solids)
+        if f > 2 and b.on_ground:
+            top = -rise
+            on_b = (b.x + b.w - 1) > gap and b.x < gap + 120 and abs(b.feet() - top) < 2.5
+            return on_b
+        if b.y > 120:
+            return False
+    return False
+
+
+def chunk_platforms(chunk, origin=0.0):
+    out = []
+    for px, top, pw in chunk.plats:
+        out.append((origin + px, top, pw))
+    return out
+
+
+def chunk_hazards(chunk, origin=0.0):
+    out = []
+    for hx, hy, hw, hh in chunk.hazards:
+        out.append((origin + hx, hy, hw, hh))
+    return out
+
+
+def validate_chunk(chunk):
+    """Prove a hand-built chunk is clearable with the game's own jump physics.
+
+    Two checks, both using step_body:
+    - every real gap is strictly inside the measured jump envelope
+    - a perfect pilot holding right, from a standstill on the entry lip,
+      crosses to the exit at the fastest scroll without falling or touching a thorn
+    """
+    if chunk.w < 64:
+        raise AssertionError("%s: too narrow" % chunk.name)
+    entry = _cover(chunk, 2, EY)
+    exitp = _cover(chunk, chunk.w - 4, EY)
+    if entry is None or entry[2] < 64:
+        raise AssertionError("%s: entry ledge missing" % chunk.name)
+    if exitp is None or exitp[2] < 48 or exitp[0] + exitp[2] < chunk.w - 1:
+        raise AssertionError("%s: exit ledge missing" % chunk.name)
+    for hx, hy, hw, hh in chunk.hazards:
+        if hh > 14 or hw < 6:
+            raise AssertionError("%s: thorn size" % chunk.name)
+        if hx < 56:
+            raise AssertionError("%s: thorn in the runway" % chunk.name)
+        bottom = hy + hh
+        sitting = False
+        for px, top, pw in list(chunk.plats) + list(getattr(chunk, "crumbles", ())):
+            if abs(bottom - top) <= 2.0 and hx < px + pw - 2 and hx + hw > px + 2:
+                sitting = True
+        if not sitting:
+            raise AssertionError("%s: thorn is not standing on a ledge" % chunk.name)
+    for hx, hy, hw, hh in getattr(chunk, "ceilings", ()):
+        if hy + hh > EY - 22:
+            raise AssertionError("%s: ceiling hangs too low to duck" % chunk.name)
+        if hx < 56:
+            raise AssertionError("%s: ceiling in the runway" % chunk.name)
+    _lint_envelope(chunk)
+    _lint_rise(chunk)
+    _lint_movers(chunk)
+    # Every chunk can show up once the scroll has ramped, so prove the fast scroll.
+    _run_pilot(chunk, scroll=SCROLL_MAX)
+    if getattr(chunk, "tier", 0) == 0:
+        _run_pilot(chunk, scroll=SCROLL0)
+    return True
+
+
+def _cover(chunk, x, top, slop=3.0):
+    for p in chunk.plats:
+        if p[0] - 0.1 <= x <= p[0] + p[2] + 0.1 and abs(p[1] - top) <= slop:
+            return p
+    return None
+
+
+def _bridged(chunk, a, b):
+    """A crumble or a mover's always-there band fills the hole between a and b."""
+    gap_l = a[0] + a[2]
+    gap_r = b[0]
+    for x, top, w in getattr(chunk, "crumbles", ()):
+        if abs(top - a[1]) <= 4 and x < gap_r - 2 and x + w > gap_l + 2:
+            return True
+    for x, top, w, amp, _period in getattr(chunk, "movers", ()):
+        left, right = x + amp, x + w - amp
+        if abs(top - a[1]) <= 4 and left < gap_r - 2 and right > gap_l + 2:
+            return True
+    return False
+
+
+def _has_step(plats, a, b):
+    gap_l = a[0] + a[2]
+    gap_r = b[0]
+    for c in plats:
+        if c is a or c is b:
+            continue
+        if c[0] < gap_r - 4 and c[0] + c[2] > gap_l + 4:
+            return True
+    return False
+
+
+def _lint_envelope(chunk):
+    plats = list(chunk.plats)
+    for a in plats:
+        for b in plats:
+            if b is a:
+                continue
+            gap = b[0] - (a[0] + a[2])
+            if gap < 8 or _has_step(plats, a, b) or _bridged(chunk, a, b):
+                continue
+            rise = a[1] - b[1]
+            if rise > MAX_RISE:
+                raise AssertionError("%s: rise %spx is more than 2 tiles" % (chunk.name, int(rise)))
+            if rise < -4:
+                if gap > 20:
+                    raise AssertionError("%s: drop of %spx is wider than a running fall" % (chunk.name, gap))
+                continue
+            limit = measure_gap(rise=max(0, int(round(rise))))
+            if gap > limit - 6:
+                raise AssertionError(
+                    "%s: gap %spx rise %s exceeds jump envelope %s"
+                    % (chunk.name, int(gap), int(rise), limit)
+                )
+
+
+def _lint_rise(chunk):
+    plats = list(chunk.plats) + [(x, y, w) for x, y, w in getattr(chunk, "crumbles", ())]
+    plats += [(x, y, w) for x, y, w, _a, _p in getattr(chunk, "movers", ())]
+    for a in plats:
+        for b in plats:
+            if b is a:
+                continue
+            rise = a[1] - b[1]
+            if rise <= MAX_RISE:
+                continue
+            # Close in x: this step is something a runner might be asked to climb.
+            if b[0] < a[0] + a[2] + 36 and b[0] + b[2] > a[0] - 8:
+                raise AssertionError("%s: rise %spx is more than 2 tiles" % (chunk.name, int(rise)))
+
+
+def _lint_movers(chunk):
+    """A sliding platform must keep a band of floor that never moves away."""
+    for x, top, w, amp, period in getattr(chunk, "movers", ()):
+        if period < 40 or amp < 0 or amp * 2 >= w - 20:
+            raise AssertionError("%s: mover has no stable landing band" % chunk.name)
+        if abs(top - EY) > MAX_RISE:
+            raise AssertionError("%s: mover is more than 2 tiles off the ground line" % chunk.name)
+
+
+def _run_pilot(chunk, speed=False, scroll=None, phase=0):
+    """Cross the chunk while the camera is already faster than a normal run.
+
+    The runner starts with a margin from the left edge, the way a live player
+    who is only a little behind still has room. Speed changes the run, not the
+    camera.
+    """
+    if scroll is None:
+        scroll = SCROLL_MAX
+    # On the entry lip, but already 110px onto the screen, as in a live run.
+    margin = 110.0
+    timers = [0 for _ in getattr(chunk, "crumbles", ())]
+    hazards = list(chunk_hazards(chunk)) + [
+        (hx, hy, hw, hh) for hx, hy, hw, hh in getattr(chunk, "ceilings", ())
+    ]
+    b = Body()
+    b.x = 10.0
+    b.y = EY - PH
+    b.vx = 0.0
+    b.on_ground = True
+    b.speed = bool(speed)
+    pilot = Pilot(1.0, random.Random(0))
+    cam = b.x - margin
+    for frame in range(1400):
+        moved = frame + phase
+        solids = live_solids(chunk, 0.0, moved, timers) + [(float(chunk.w), float(EY), 120.0)]
+        b.speed = bool(speed)
+        ix, held, pressed = pilot.decide(b, solids, hazards)
+        step_body(b, ix, held, pressed, solids)
+        _arm_crumbles(b, chunk, timers)
+        cam += scroll
+        if b.feet() > FALL_Y or b.y > EY + 80:
+            raise AssertionError("%s: fell at frame %s x=%.1f y=%.1f scroll=%.2f" % (
+                chunk.name, frame, b.x, b.y, scroll))
+        if b.x + b.w < cam - 1:
+            raise AssertionError("%s: scrolled off at frame %s (screen x %.1f)" % (
+                chunk.name, frame, b.x - cam))
+        for hx, hy, hw, hh in hazards:
+            if rect_hit(b.x, b.y, b.w, b.h, hx, hy, hw, hh):
+                raise AssertionError("%s: hit a spike at frame %s x=%.1f y=%.1f" % (
+                    chunk.name, frame, b.x, b.y))
+        if b.x > chunk.w + 8 and b.on_ground and abs(b.feet() - EY) < 3:
+            return
+    raise AssertionError("%s: pilot did not reach the exit (x=%.1f y=%.1f ground=%s)" % (
+        chunk.name, b.x, b.y, b.on_ground))
+
+
+def _arm_crumbles(body, chunk, timers):
+    if not body.on_ground:
+        return
+    fx = body.x + body.w * 0.5
+    fy = body.feet()
+    for i, (x, top, w) in enumerate(getattr(chunk, "crumbles", ())):
+        if timers[i] >= CRUMBLE_TIME:
+            continue
+        if abs(fy - top) <= 3.0 and x - 2 <= fx <= x + w + 2:
+            timers[i] += 1
+
+
+def nearest_platform(body, solids):
+    best = None
+    best_d = 1e9
+    cx = body.x + PW * 0.5
+    fy = body.feet()
+    for px, top, pw in solids:
+        mx = px + min(pw * 0.5, 40)
+        d = math.hypot(mx - cx, top - fy)
+        if d < best_d:
+            best_d = d
+            best = (px, top, pw)
+    return best
+
+# ---- chunks.py ----
+# Hand-built chunks. The runner is an endless shuffle of these, never raw noise:
+# every chunk is proved clearable by kultakiri.physics.validate_chunk.
+
+
+class Chunk:
+    def __init__(self, name, plats, hazards=(), coins=(), powers=(), hard=False, w=CH_W,
+                 crumbles=(), movers=(), ceilings=(), tier=0):
+        self.name = name
+        self.w = w
+        self.tier = 2 if hard else tier
+        self.hard = self.tier >= 2
+        self.plats = tuple((float(x), float(y), float(pw)) for x, y, pw in plats)
+        self.hazards = tuple((float(x), float(y), float(hw), float(hh)) for x, y, hw, hh in hazards)
+        self.ceilings = tuple((float(x), float(y), float(hw), float(hh)) for x, y, hw, hh in ceilings)
+        self.crumbles = tuple((float(x), float(y), float(pw)) for x, y, pw in crumbles)
+        self.movers = tuple((float(x), float(y), float(pw), float(amp), int(period)) for x, y, pw, amp, period in movers)
+        self.coins = tuple((float(x), float(y)) for x, y in coins)
+        self.powers = tuple((float(x), float(y)) for x, y in powers)
+
+
+def _ground(w, x=0, top=EY):
+    return (x, top, w)
+
+
+def _thorn(x, w=16, h=10, top=EY):
+    return (x, top - h, w, h)
+
+
+def _coins_on(x0, x1, top=EY, step=22, lift=20):
+    out = []
+    x = x0
+    while x <= x1:
+        out.append((x, top - lift))
+        x += step
+    return out
+
+
+# Wide opening. Coins on the floor, no free powerups.
+ALKU = Chunk(
+    "alku",
+    plats=[_ground(520)],
+    coins=_coins_on(90, 460, step=36, lift=20),
+    w=520,
+)
+
+MAALI = Chunk(
+    "maali",
+    plats=[_ground(240)],
+    coins=_coins_on(40, 180, step=24, lift=28),
+    w=240,
+)
+
+TASAMAA = Chunk(
+    "tasamaa",
+    plats=[_ground(CH_W)],
+    coins=_coins_on(78, 168, step=22),
+)
+
+KOLIKOT = Chunk(
+    "kolikot",
+    plats=[_ground(CH_W)],
+    coins=[(78, EY - 26), (100, EY - 40), (122, EY - 52), (144, EY - 40), (166, EY - 26)],
+    powers=[(122, EY - 58)],
+)
+
+# gap 32 (envelope on flat ground is 46, lint keeps a 6px margin)
+PIKKUKUILU = Chunk(
+    "pikkukuilu",
+    plats=[_ground(88), _ground(88, 120)],
+    coins=[(40, EY - 26), (148, EY - 26), (170, EY - 26)],
+    powers=[(156, EY - 18)],
+)
+
+# gap 38, still inside the measured full-jump reach
+KUILU = Chunk(
+    "kuilu",
+    plats=[_ground(84), _ground(86, 122)],
+    coins=[(36, EY - 26), (150, EY - 36), (174, EY - 26)],
+    hard=True,
+)
+
+KAKSI = Chunk(
+    "kaksi",
+    plats=[_ground(74), (106, EY, 40), (154, EY, 54)],
+    coins=[(36, EY - 26), (120, EY - 28), (176, EY - 26)],
+)
+
+NOUSU = Chunk(
+    "nousu",
+    plats=[_ground(104), (82, EY - 20, 78), (146, EY, 62)],
+    coins=[(40, EY - 26), (110, EY - 44), (170, EY - 26)],
+    powers=[(114, EY - 40)],
+)
+
+LASKU = Chunk(
+    "lasku",
+    plats=[_ground(78), (90, EY + 22, 56), (156, EY, 52)],
+    coins=[(36, EY - 26), (112, EY - 4), (176, EY - 26)],
+    powers=[(112, EY + 6)],
+)
+
+OKAPUU = Chunk(
+    "okapuu",
+    plats=[_ground(CH_W)],
+    hazards=[_thorn(100, 16, 10), _thorn(168, 14, 10)],
+    coins=[(70, EY - 26), (124, EY - 36), (186, EY - 26)],
+    powers=[(186, EY - 18)],
+)
+
+KAPEA = Chunk(
+    "kapea",
+    plats=[_ground(72), (104, EY, 44), (156, EY, 52)],
+    coins=[(36, EY - 26), (120, EY - 28), (176, EY - 26)],
+    hard=True,
+)
+
+SIKSAK = Chunk(
+    "siksak",
+    plats=[_ground(80), (64, EY - 16, 52), (112, EY - 32, 40), (150, EY, 58)],
+    coins=[(36, EY - 26), (80, EY - 40), (128, EY - 54), (176, EY - 26)],
+    powers=[(128, EY - 52)],
+    hard=True,
+)
+
+PORTAAT = Chunk(
+    "portaat",
+    plats=[_ground(86), (70, EY - 16, 50), (112, EY - 30, 46), (154, EY, 54)],
+    coins=[(36, EY - 26), (88, EY - 40), (128, EY - 54), (176, EY - 26)],
+    powers=[(128, EY - 46)],
+)
+
+MATALA = Chunk(
+    "matala",
+    plats=[_ground(74), (92, EY + 26, 52), (152, EY, 56)],
+    coins=[(36, EY - 26), (112, EY + 2), (176, EY - 26)],
+    powers=[(112, EY + 8)],
+)
+
+
+# Spike ceiling over flat ground. A full jump hits it; the fair path is a short hop.
+KATTO = Chunk(
+    "katto",
+    plats=[_ground(CH_W)],
+    ceilings=[(100, EY - 58, 40, 12)],
+    coins=[(70, EY - 22), (160, EY - 22)],
+)
+
+# Floor spikes, then spikes sitting on a raised step, power on that step.
+PIIKIT = Chunk(
+    "piikit",
+    plats=[_ground(CH_W), (58, EY - 16, 52)],
+    hazards=[_thorn(64, 10, 8, EY - 16), _thorn(140, 12, 8)],
+    coins=[(40, EY - 22), (84, EY - 36), (176, EY - 22)],
+    powers=[(86, EY - 32)],
+    tier=1,
+)
+
+# Bridge that gives way if you hesitate. The power sits on the crumbling span.
+MUREA = Chunk(
+    "murea",
+    plats=[_ground(82), (148, EY, 60)],
+    crumbles=[(74, EY, 82)],
+    coins=[(40, EY - 24), (176, EY - 24)],
+    powers=[(112, EY - 18)],
+    tier=1,
+)
+
+# A wide slab that slides, but always covers the band between the banks.
+LIUKU = Chunk(
+    "liuku",
+    plats=[_ground(90), (156, EY, 52)],
+    movers=[(76, EY, 112, 12, 120)],
+    coins=[(40, EY - 24), (180, EY - 24)],
+    powers=[(124, EY - 18)],
+    tier=1,
+)
+
+# Low road has a bramble. High road is two tiles up and holds the power.
+HAARA = Chunk(
+    "haara",
+    plats=[_ground(CH_W), (78, EY - 32, 72)],
+    hazards=[_thorn(108, 16, 10)],
+    coins=[(40, EY - 24), (100, EY - 54), (176, EY - 24)],
+    powers=[(108, EY - 54)],
+    tier=1,
+)
+
+# Four short steps up to two tiles, then back down to the exit.
+RAPUT = Chunk(
+    "raput",
+    plats=[_ground(70), (58, EY - 16, 40), (90, EY - 32, 40), (122, EY - 16, 40), (150, EY, 58)],
+    coins=[(36, EY - 24), (104, EY - 54), (176, EY - 24)],
+    powers=[(104, EY - 52)],
+    tier=1,
+)
+
+POOL = (
+    TASAMAA, KOLIKOT, PIKKUKUILU, KUILU, KAKSI, NOUSU, LASKU,
+    OKAPUU, KAPEA, SIKSAK, PORTAAT, MATALA,
+    KATTO, PIIKIT, MUREA, LIUKU, HAARA, RAPUT,
+)
+ALL_CHUNKS = (ALKU, MAALI) + POOL
+BY_NAME = {c.name: c for c in ALL_CHUNKS}
+
+
+def validate_all():
+    for chunk in ALL_CHUNKS:
+        validate_chunk(chunk)
+    return True
+
+# ---- world.py ----
+# Endless course: a fixed opening, then a shuffle of proved chunks, then a finish.
+import random
+
+
+
+class Coin:
+    def __init__(self, x, y):
+        self.x = float(x)
+        self.y = float(y)
+        self.alive = True
+
+
+class Pickup:
+    def __init__(self, kind, x, y, shared=False):
+        self.kind = kind
+        self.x = float(x)
+        self.y = float(y)
+        self.alive = True
+        self.t = 0
+        self.shared = shared
+        self.got = set()
+        self.linger = 0
+
+
+class Crumble:
+    def __init__(self, x, top, w):
+        self.x, self.top, self.w = float(x), float(top), float(w)
+        self.timer = 0
+        self.armed = False
+        self.live = True
+        self.stood = {}
+
+
+class Mover:
+    def __init__(self, x, top, w, amp, period):
+        self.x, self.top, self.w = float(x), float(top), float(w)
+        self.amp, self.period = float(amp), int(period)
+
+    def at(self, frame):
+        return self.x + mover_dx(frame, self.period, self.amp), self.top, self.w
+
+
+class World:
+    # Teach the new shapes while the scroll is still gentle, each once.
+    OPENING = ("pikkukuilu", "portaat", "okapuu", "lasku", "murea", "liuku", "katto", "piikit", "haara")
+
+    def __init__(self, rng=None, powers_on=None, power_freq=1.0):
+        self.rng = rng or random.Random()
+        validate_all()
+        self.placed = []
+        self.x_end = 0.0
+        self.coins = []
+        self.powers = []
+        self.crumbles = []
+        self.movers = []
+        self.power_i = 0
+        self.powers_on = powers_on
+        self.power_freq = power_freq if power_freq > 0 else 0.0
+        self.last_hard = False
+        self.last_name = ""
+        self.frame = 0
+        self.done = False
+        self.finish_x = None
+        self.opening = list(self.OPENING)
+        self._place(ALKU)
+        self.ensure(0, SCROLL0)
+
+    def _allowed(self, chunk, scroll):
+        ramp = (scroll - SCROLL0) / max(0.001, SCROLL_MAX - SCROLL0)
+        ramp = 0.0 if ramp < 0 else (1.0 if ramp > 1 else ramp)
+        if chunk.tier >= 2 and ramp < 0.55:
+            return False
+        if chunk.tier == 1 and ramp < 0.15:
+            return False
+        if chunk.name == self.last_name:
+            return False
+        if self.last_hard and chunk.hard:
+            return False
+        return True
+
+    def _pick(self, scroll):
+        if self.opening:
+            return BY_NAME[self.opening.pop(0)]
+        choices = [c for c in POOL if self._allowed(c, scroll)]
+        if not choices:
+            choices = [c for c in POOL if c.tier == 0 and c.name != self.last_name] or list(POOL)
+        ramp = (scroll - SCROLL0) / max(0.001, SCROLL_MAX - SCROLL0)
+        bag = []
+        for chunk in choices:
+            weight = 4 - chunk.tier
+            if ramp > 0.7 and chunk.tier >= 1:
+                weight += 1
+            bag.extend([chunk] * max(1, weight))
+        return self.rng.choice(bag)
+
+    def _place(self, chunk):
+        origin = float(self.x_end)
+        self.placed.append((origin, chunk))
+        self.x_end += chunk.w
+        self.last_hard = chunk.hard
+        self.last_name = chunk.name
+        for x, y in chunk.coins:
+            self.coins.append(Coin(origin + x, y))
+        enabled = [k for k in POWER_KINDS if self.powers_on is None or self.powers_on.get(k, True)]
+        for x, y in chunk.powers:
+            if not enabled or self.rng.random() > self.power_freq:
+                continue
+            kind = enabled[self.power_i % len(enabled)]
+            self.power_i += 1
+            self.powers.append(Pickup(kind, origin + x, y, shared=False))
+        for x, top, w in chunk.crumbles:
+            self.crumbles.append(Crumble(origin + x, top, w))
+        for x, top, w, amp, period in chunk.movers:
+            self.movers.append(Mover(origin + x, top, w, amp, period))
+        if chunk.name == "maali":
+            self.finish_x = origin + 70
+            self.done = True
+
+    def ensure(self, camera, scroll=None):
+        if scroll is None:
+            scroll = SCROLL0
+        guard = 0
+        while self.x_end < camera + W + CH_W * 2 and not self.done and guard < 48:
+            guard += 1
+            if self.x_end >= FINISH_X:
+                self._place(MAALI)
+                break
+            self._place(self._pick(scroll))
+
+    def arm_crumbles(self, players):
+        # Each runner gets their own count. The leader crossing must not
+        # drop the bridge under the people still walking up to it.
+        for tile in self.crumbles:
+            if not tile.live:
+                continue
+            highest = 0
+            for player in players:
+                body = player.body
+                if player.state != "run" or not body.on_ground:
+                    continue
+                fx = body.x + body.w * 0.5
+                fy = body.feet()
+                if abs(fy - tile.top) <= 3 and tile.x - 2 <= fx <= tile.x + tile.w + 2:
+                    n = tile.stood.get(player.idx, 0) + 1
+                    tile.stood[player.idx] = n
+                    highest = max(highest, n)
+                    if n >= CRUMBLE_TIME:
+                        tile.live = False
+            if highest:
+                tile.armed = True
+                tile.timer = highest
+
+    def advance(self):
+        self.frame += 1
+
+    def _near(self, x0, x1):
+        for origin, chunk in self.placed:
+            if origin + chunk.w < x0 or origin > x1:
+                continue
+            yield origin, chunk
+
+    def solids_near(self, x0, x1):
+        out = []
+        for origin, chunk in self._near(x0, x1):
+            for px, top, pw in chunk.plats:
+                out.append((origin + px, top, pw))
+        for tile in self.crumbles:
+            if tile.live and tile.x + tile.w >= x0 and tile.x <= x1:
+                out.append((tile.x, tile.top, tile.w))
+        for slab in self.movers:
+            x, top, w = slab.at(self.frame)
+            if x + w >= x0 and x <= x1:
+                out.append((x, top, w))
+        return out
+
+    def hazards_near(self, x0, x1):
+        out = []
+        for origin, chunk in self._near(x0, x1):
+            for hx, hy, hw, hh in chunk.hazards:
+                out.append((origin + hx, hy, hw, hh))
+            for hx, hy, hw, hh in chunk.ceilings:
+                out.append((origin + hx, hy, hw, hh))
+        return out
+
+
+def chunk_count():
+    return len(ALL_CHUNKS)
+
+# ---- actors.py ----
+# Runners, the one ghost rescue, bumps and powerups.
+# Players never stand on each other and there is no stomp.
+import math
+
+
+
+class Player:
+    def __init__(self, idx, pad):
+        self.idx = idx
+        self.pad = pad
+        self.pilot = None
+        self.body = Body()
+        self.state = "run"
+        self.coins = 0
+        self.total_coins = 0
+        self.max_x = 0.0
+        self.bank = 0
+        self.wins = 0
+        self.rescues = 1
+        self.ghost_t = 0
+        self.ghost_land = 0
+        self.inv = 0
+        self.double_t = 0
+        self.speed_t = 0
+        self.shield_t = 0
+        self.shield = False
+        self.magnet_t = 0
+        self.slow_t = 0
+        self.glide_t = 0
+        self.face = 1
+        self.anim = 0.0
+        self.squash = 0.0
+        self.popup = None
+        self.lost_t = 0
+        self.round_pts = 0
+        self.round_meters = 0
+
+    def reset_round(self):
+        b = self.body
+        b.vx = b.vy = 0.0
+        b.on_ground = True
+        b.coyote = 0
+        b.buf = 0
+        b.air_jumps = 0
+        b.air_max = 0
+        b.stun = 0
+        b.slow = b.glide = b.speed = False
+        b.was_jump = False
+        self.state = "run"
+        self.coins = 0
+        self.rescues = 1
+        self.ghost_t = 0
+        self.ghost_land = 0
+        self.inv = 18
+        self.double_t = self.speed_t = self.shield_t = 0
+        self.magnet_t = self.slow_t = self.glide_t = 0
+        self.shield = False
+        self.squash = 0.0
+        self.popup = None
+        self.round_pts = 0
+        self.round_meters = 0
+        if self.pilot is not None:
+            self.pilot.hold = 0
+            self.pilot.did_air = False
+
+    def sync_flags(self):
+        b = self.body
+        b.speed = self.speed_t > 0
+        b.glide = self.glide_t > 0
+        b.slow = self.slow_t > 0
+        b.air_max = 1 if self.double_t > 0 else 0
+
+    def tick_timers(self):
+        for name in ("double_t", "speed_t", "shield_t", "magnet_t", "slow_t", "glide_t"):
+            value = getattr(self, name)
+            if value > 0:
+                setattr(self, name, value - 1)
+        if self.shield_t <= 0:
+            self.shield = False
+        if self.inv > 0:
+            self.inv -= 1
+        if self.lost_t > 0:
+            self.lost_t -= 1
+        if self.popup is not None:
+            text, left = self.popup
+            self.popup = None if left <= 1 else (text, left - 1)
+        if self.squash > 0.02:
+            self.squash *= 0.72
+        else:
+            self.squash = 0.0
+
+    def main_power(self):
+        best = None
+        best_t = 0
+        for key, attr in (
+            ("double", "double_t"), ("speed", "speed_t"), ("shield", "shield_t"),
+            ("magnet", "magnet_t"), ("slow", "slow_t"), ("glide", "glide_t"),
+        ):
+            value = getattr(self, attr)
+            if key == "shield" and not self.shield:
+                continue
+            if value > best_t:
+                best_t = value
+                best = key
+        return best
+
+
+def _note(stats, key, n=1):
+    if stats is not None:
+        stats[key] = stats.get(key, 0) + n
+
+
+def _got(stats, kind):
+    if stats is None:
+        return
+    got = stats.setdefault("got_powers", [])
+    if kind not in got:
+        got.append(kind)
+
+
+def give_power(player, kind, others, stats=None):
+    if kind == "double":
+        player.double_t = DUR["double"]
+        player.body.air_max = 1
+        if not player.body.on_ground:
+            player.body.air_jumps = max(player.body.air_jumps, 1)
+    elif kind == "speed":
+        player.speed_t = DUR["speed"]
+    elif kind == "shield":
+        player.shield = True
+        player.shield_t = DUR["shield"]
+        _note(stats, "shield_on")
+    elif kind == "magnet":
+        player.magnet_t = DUR["magnet"]
+    elif kind == "slow":
+        slowed = False
+        for other in others:
+            if other is not player and other.state == "run":
+                other.slow_t = max(other.slow_t, DUR["slow"])
+                slowed = True
+        if slowed:
+            _note(stats, "slow_on")
+    elif kind == "glide":
+        player.glide_t = DUR["glide"]
+    player.popup = (tr("p_" + kind), 55)
+    _got(stats, kind)
+
+
+def tick_runner(player, ix, jump_held, jump_pressed, solids, stats=None):
+    if player.state != "run":
+        return None
+    player.sync_flags()
+    did, landed = step_body(player.body, ix, jump_held, jump_pressed, solids)
+    b = player.body
+    if did == "airjump":
+        _note(stats, "double_air")
+    if player.speed_t > 0 and b.vx > RUN + 0.12:
+        _note(stats, "speed_fast")
+    if player.glide_t > 0 and jump_held and (not b.on_ground) and abs(b.vy - GLIDE_FALL) < 0.08:
+        _note(stats, "glide_frames")
+    if b.vx > 0.25:
+        player.face = 1
+    elif b.vx < -0.25:
+        player.face = -1
+    if landed is not None:
+        player.squash = 0.45
+    player.anim += abs(b.vx)
+    return did
+
+
+def touch_hazard(player, hazards, stats=None):
+    if player.state != "run" or player.inv > 0:
+        return None
+    b = player.body
+    for hx, hy, hw, hh in hazards:
+        if not rect_hit(b.x, b.y, b.w, b.h, hx, hy, hw, hh):
+            continue
+        if player.shield:
+            player.shield = False
+            player.shield_t = 0
+            player.inv = INV_HAZARD
+            b.vy = -2.4
+            b.on_ground = False
+            _note(stats, "shield_block")
+            return "block"
+        b.vx = -1.7
+        b.vy = -3.1
+        b.on_ground = False
+        b.stun = STUN_HAZARD
+        player.inv = INV_HAZARD
+        return "hit"
+    return None
+
+
+def fate(player, camera_x):
+    if player.state != "run":
+        return None
+    if player.body.y > FALL_Y - 10:
+        return "fall"
+    if player.body.x + player.body.w < camera_x - 1:
+        return "behind"
+    return None
+
+
+def start_ghost(player, camera_x):
+    """One rescue per round. Coins still count. A second miss is out for the round."""
+    if player.rescues <= 0:
+        player.state = "out"
+        player.popup = (tr("out"), 50)
+        return "out"
+    player.rescues -= 1
+    player.state = "ghost"
+    player.ghost_t = GHOST_FRAMES
+    player.ghost_land = 0
+    player.body.x = camera_x + 56
+    player.body.y = 52
+    player.body.vx = 0.0
+    player.body.vy = 0.0
+    player.body.on_ground = False
+    player.body.stun = 0
+    player.inv = 0
+    player.popup = (tr("ghost"), 45)
+    return "ghost"
+
+
+def tick_ghost(player, ix, iy, solids, camera_x, scroll):
+    player.ghost_t -= 1
+    player.body.vx = scroll + ix * 1.15
+    player.body.vy = iy * 1.2 + 0.16
+    player.body.x += player.body.vx
+    player.body.y += player.body.vy
+    lo = camera_x + 2
+    hi = camera_x + W - PW - 2
+    player.body.x = lo if player.body.x < lo else (hi if player.body.x > hi else player.body.x)
+    if player.body.y < 16:
+        player.body.y = 16
+    elif player.body.y > H - PH - 12:
+        player.body.y = H - PH - 12
+    feet = player.body.feet()
+    cx = player.body.x + PW * 0.5
+    top = None
+    for px, py, pw in solids:
+        if px - 2 <= cx <= px + pw + 2 and abs(feet - py) <= 7:
+            top = py
+            break
+    if top is not None:
+        player.ghost_land += 1
+        if player.ghost_land >= 8:
+            player.body.y = top - PH
+            player.body.vy = 0.0
+            player.body.vx = max(player.body.vx, scroll)
+            player.body.on_ground = True
+            player.sync_flags()
+            player.body.air_jumps = player.body.air_max
+            player.state = "run"
+            player.inv = 36
+            player.ghost_t = 0
+            return "revive"
+    else:
+        player.ghost_land = 0
+    if player.ghost_t <= 0:
+        player.state = "out"
+        player.popup = (tr("out"), 50)
+        return "expire"
+    return None
+
+
+def clamp_runner(player, camera_x, scroll):
+    if player.state != "run":
+        return
+    limit = camera_x + W - PW - 3
+    if player.body.x > limit:
+        player.body.x = limit
+        if player.body.vx > scroll:
+            player.body.vx = scroll
+
+
+def separate_bumps(players, stats=None):
+    runners = [p for p in players if p.state == "run"]
+    for i, a in enumerate(runners):
+        for b in runners[i + 1:]:
+            ab, bb = a.body, b.body
+            if not rect_hit(ab.x, ab.y, ab.w, ab.h, bb.x, bb.y, bb.w, bb.h):
+                continue
+            if abs((ab.y + ab.h * 0.5) - (bb.y + bb.h * 0.5)) > PH * 0.42:
+                continue
+            if ab.x <= bb.x:
+                ab.vx = min(ab.vx, -BUMP_VX)
+                bb.vx = max(bb.vx, BUMP_VX)
+                overlap = (ab.x + ab.w) - bb.x
+                if overlap > 0:
+                    ab.x -= overlap * 0.5 + 0.4
+                    bb.x += overlap * 0.5 + 0.4
+            else:
+                bb.vx = min(bb.vx, -BUMP_VX)
+                ab.vx = max(ab.vx, BUMP_VX)
+                overlap = (bb.x + bb.w) - ab.x
+                if overlap > 0:
+                    bb.x -= overlap * 0.5 + 0.4
+                    ab.x += overlap * 0.5 + 0.4
+            _note(stats, "bumps")
+
+
+def pull_coins(players, coins, stats=None):
+    for player in players:
+        if player.state != "run" or player.magnet_t <= 0:
+            continue
+        cx = player.body.x + PW * 0.5
+        cy = player.body.y + PH * 0.5
+        for coin in coins:
+            if not coin.alive:
+                continue
+            dx = cx - coin.x
+            dy = cy - coin.y
+            dist = math.hypot(dx, dy)
+            if 1.0 < dist <= MAGNET_R:
+                coin.x += dx / dist * MAGNET_PULL
+                coin.y += dy / dist * MAGNET_PULL
+                _note(stats, "magnet_pulls")
+
+
+def _near(player, x, y, rx, ry):
+    return abs((player.body.x + PW * 0.5) - x) <= rx and abs((player.body.y + PH * 0.45) - y) <= ry
+
+
+def collect(player, coins, powers, players, stats=None):
+    if player.state == "out":
+        return []
+    events = []
+    for coin in coins:
+        if coin.alive and _near(player, coin.x, coin.y, 12, 18):
+            coin.alive = False
+            player.coins += 1
+            player.total_coins += 1
+            _note(stats, "coins")
+            events.append("coin")
+    if player.state != "run":
+        return events
+    for pickup in powers:
+        if not pickup.alive or not _near(player, pickup.x, pickup.y, 14, 18):
+            continue
+        if pickup.shared:
+            if player.idx in pickup.got:
+                continue
+            pickup.got.add(player.idx)
+            pickup.linger = 80
+            give_power(player, pickup.kind, players, stats)
+            events.append(pickup.kind)
+            continue
+        pickup.alive = False
+        give_power(player, pickup.kind, players, stats)
+        events.append(pickup.kind)
+    return events
+
+
+def tick_pickups(powers, runners):
+    alive_ids = {p.idx for p in runners}
+    for pickup in powers:
+        if not pickup.alive:
+            continue
+        pickup.t += 1
+        if pickup.shared and pickup.got:
+            pickup.linger -= 1
+            if pickup.linger <= 0 or alive_ids and alive_ids <= pickup.got:
+                pickup.alive = False
+
+
+def award(players):
+    running = [p for p in players if p.state == "run"]
+    ghosts = [p for p in players if p.state == "ghost"]
+    pool = running or ghosts or list(players)
+    best_x = max(p.max_x for p in pool)
+    top = [p for p in pool if p.max_x >= best_x - 12]
+    best_c = max(p.coins for p in top)
+    winners = [p for p in top if p.coins == best_c]
+    for player in players:
+        won = player in winners
+        player.round_meters = int(player.max_x) // 16
+        player.round_pts = player.coins * COIN_PTS + int(player.max_x) // DIST_DIV + (WIN_PTS if won else 0)
+        player.bank += player.round_pts
+        if won:
+            player.wins += 1
+    return winners
+
+
+def spawn_feet(player, x):
+    player.body.x = float(x)
+    player.body.y = EY - PH
+    player.body.vx = 0.0
+    player.body.vy = 0.0
+    player.body.on_ground = True
+    player.max_x = player.body.x
+
+# ---- audio.py ----
+# Short synthesized blips. Music is built once, never inside the frame.
+import array
+import math
+import os
+
+import pygame
+
+_SFX = {}
+_READY = False
+_MUSIC = None
+_VOL = {"sfx": 0.8, "music": 0.45}
+
+
+def set_volumes(sfx_vol, music_vol):
+    _VOL["sfx"] = max(0.0, min(1.0, float(sfx_vol) / 10.0))
+    _VOL["music"] = max(0.0, min(1.0, float(music_vol) / 10.0))
+    if _MUSIC is not None:
+        try:
+            _MUSIC.set_volume(_VOL["music"])
+        except Exception:
+            pass
+
+
+def _tone(freq, dur, vol=0.25, wave="sq", slide=0.0):
+    rate = 22050
+    n = max(1, int(rate * dur))
+    buf = array.array("h")
+    ph = 0.0
+    for i in range(n):
+        t = i / n
+        f = freq * (1.0 + slide * t)
+        ph += f / rate
+        if wave == "sq":
+            v = 1.0 if (ph % 1.0) < 0.5 else -1.0
+        elif wave == "tri":
+            v = 4.0 * abs((ph % 1.0) - 0.5) - 1.0
+        else:
+            v = math.sin(ph * 6.283185)
+        env = 1.0 - t
+        sample = int(max(-1.0, min(1.0, v * vol * env)) * 32767)
+        buf.append(sample)
+        buf.append(sample)
+    return buf
+
+
+def _mix(into, buf, at):
+    end = min(len(into), at + len(buf))
+    for i in range(at, end):
+        into[i] = max(-32767, min(32767, into[i] + buf[i - at]))
+
+
+def prepare_audio():
+    if os.environ.get("KULTAKIRI_NO_SFX"):
+        return
+    try:
+        pygame.mixer.pre_init(22050, -16, 2, 512)
+    except Exception:
+        pass
+
+
+def start_audio():
+    global _READY
+    if os.environ.get("KULTAKIRI_NO_SFX"):
+        return
+    try:
+        if pygame.mixer.get_init() is None:
+            pygame.mixer.init(22050, -16, 2, 512)
+        _SFX["jump"] = pygame.mixer.Sound(buffer=_tone(520, 0.09, 0.18, "sq", 0.6).tobytes())
+        _SFX["coin"] = pygame.mixer.Sound(buffer=_tone(880, 0.08, 0.2, "sq", 0.4).tobytes())
+        _SFX["power"] = pygame.mixer.Sound(buffer=_tone(660, 0.16, 0.2, "tri", 0.5).tobytes())
+        _SFX["hit"] = pygame.mixer.Sound(buffer=_tone(180, 0.12, 0.22, "sq", -0.4).tobytes())
+        _SFX["ghost"] = pygame.mixer.Sound(buffer=_tone(360, 0.22, 0.16, "sine", 0.8).tobytes())
+        _SFX["revive"] = pygame.mixer.Sound(buffer=_tone(480, 0.14, 0.2, "tri", 0.7).tobytes())
+        _SFX["out"] = pygame.mixer.Sound(buffer=_tone(140, 0.2, 0.2, "sine", -0.5).tobytes())
+        _SFX["go"] = pygame.mixer.Sound(buffer=_tone(440, 0.12, 0.2, "sq", 0.2).tobytes())
+        _SFX["win"] = pygame.mixer.Sound(buffer=_tone(523, 0.28, 0.2, "tri", 0.15).tobytes())
+        if not os.environ.get("KULTAKIRI_NO_MUSIC"):
+            global _MUSIC
+            _MUSIC = pygame.mixer.Sound(buffer=_music().tobytes())
+            _MUSIC.set_volume(_VOL["music"])
+            _MUSIC.play(loops=-1)
+        _READY = True
+    except Exception:
+        _READY = False
+
+
+def _music():
+    rate = 22050
+    seconds = 4
+    n = rate * seconds
+    buf = array.array("h", [0]) * (n * 2)
+    scale = (60, 62, 64, 67, 69, 72, 74, 76)
+    step = int(rate * 0.28)
+
+    def midi(m):
+        return 440.0 * (2.0 ** ((m - 69) / 12.0))
+
+    for i, m in enumerate((60, 64, 67, 64, 69, 67, 64, 62) * 2):
+        tone = _tone(midi(m), 0.26, 0.06, "tri", 0.0)
+        _mix(buf, tone, i * step * 2)
+    bass_step = step * 2
+    for i, m in enumerate((48, 48, 43, 48) * 4):
+        tone = _tone(midi(m), 0.34, 0.05, "sine", 0.0)
+        _mix(buf, tone, i * bass_step * 2)
+    return buf
+
+
+def sfx(name):
+    if not _READY or os.environ.get("KULTAKIRI_AUTOPLAY"):
+        return
+    sound = _SFX.get(name)
+    if sound is not None:
+        try:
+            sound.set_volume(_VOL["sfx"])
+            sound.play()
+        except Exception:
+            pass
+
+# ---- cpu.py ----
+# CPU racers. They read the course the same way a careful player would.
+import random
+
+
+# skill: jump timing. delay: frames a decision is held back. power: chance to
+# go for a pickup. slow_hunt: chance to chase a slow bubble when behind.
+DIFF = {
+    "helppo": dict(skill=0.78, delay=3, power=0.35, slow_hunt=0.25, mistake=0.05),
+    "normaali": dict(skill=0.92, delay=1, power=0.75, slow_hunt=0.8, mistake=0.015),
+    "vaikea": dict(skill=1.0, delay=0, power=0.95, slow_hunt=1.0, mistake=0.0),
+}
+
+
+class CpuBrain:
+    def __init__(self, difficulty, rng=None):
+        self.spec = DIFF.get(difficulty, DIFF["normaali"])
+        self.rng = rng or random.Random()
+        self.pilot = Pilot(self.spec["skill"], self.rng)
+        self.queue = []
+
+    def decide(self, player, solids, hazards, powers, others):
+        des = blank()
+        if player.state == "ghost":
+            ix, iy = ghost_steer(player.body, solids)
+            des["x"] = ix
+            des["y"] = iy
+            return des
+        if player.state != "run":
+            return des
+        _ix, held, pressed = self.pilot.decide(
+            player.body, solids, hazards,
+            glide=player.glide_t > 0,
+            air_jumps=player.body.air_jumps,
+        )
+        # Reaction time delays the jump. It still happens, just late.
+        self.queue.append((bool(held), bool(pressed)))
+        lag = self.spec["delay"]
+        if len(self.queue) <= lag:
+            held, pressed = False, False
+        else:
+            held, pressed = self.queue.pop(0)
+        if self.rng.random() < self.spec["mistake"]:
+            held = False
+            pressed = False
+        des["x"] = 1.0
+        des["jump"] = bool(held or pressed)
+        return des
+
+# ---- draw.py ----
+# Chunky dawn meadow. One cached sky, everything else is a handful of rects.
+import math
+
+import pygame
+
+
+SKY_TOP = (255, 168, 132)
+SKY_BOT = (255, 226, 206)
+HILL_FAR = (176, 196, 168)
+HILL = (104, 168, 112)
+RAVINE = (48, 78, 90)
+GRASS = (168, 210, 92)
+GRASS_DK = (72, 150, 68)
+DIRT = (168, 118, 70)
+DIRT_DK = (116, 74, 46)
+SAND = (228, 190, 112)
+CLOUD = (255, 248, 242)
+
+
+def make_sky():
+    surf = pygame.Surface((W, H))
+    for y in range(H):
+        k = y / (H - 1)
+        col = tuple(int(SKY_TOP[i] + (SKY_BOT[i] - SKY_TOP[i]) * k) for i in range(3))
+        pygame.draw.line(surf, col, (0, y), (W, y))
+    return surf
+
+
+def _plat_kind(top):
+    if top < EY - 6:
+        return "high"
+    if top > EY + 6:
+        return "low"
+    return "ground"
+
+
+def draw_world(g):
+    c = g.canvas
+    cam = g.camera
+    c.blit(g.sky, (0, 0))
+    # far hills, then a ravine the ground covers
+    for i in range(-1, 22):
+        wx = i * 16 + cam * 0.25
+        h = 16 + int(7 * math.sin(wx * 0.04))
+        x = int(i * 16 - (cam * 0.25) % 16)
+        pygame.draw.rect(c, HILL_FAR, (x, EY - 36 - h, 16, h + 8))
+    pygame.draw.rect(c, RAVINE, (0, EY + 6, W, H - EY))
+    for i in range(-1, 22):
+        wx = i * 18 + cam * 0.45
+        h = 10 + int(5 * math.sin(wx * 0.07 + 1.2))
+        x = int(i * 18 - (cam * 0.45) % 18)
+        pygame.draw.rect(c, HILL, (x, EY - 16 - h, 18, h))
+    _clouds(c, cam, g.t)
+    if g.world is not None:
+        _chunks(c, g.world, cam, g.t)
+        _coins(c, g.world.coins, cam, g.t)
+        _pickups(c, g.world.powers, cam, g.t)
+    _bits(c, g.bits, cam)
+    for pl in g.players:
+        if pl.state == "out":
+            continue
+        draw_player(c, pl, cam, g.t)
+    if g.camera > 8:
+        # left-edge warning when someone is about to be left behind
+        for pl in g.players:
+            if pl.state == "run" and pl.body.x - cam < 28:
+                pygame.draw.rect(c, (210, 70, 60), (0, 16, 3, H - 16))
+                break
+    _hud(g)
+
+
+def _clouds(c, cam, t):
+    specs = ((30, 28, 0.12), (110, 18, 0.18), (200, 36, 0.1), (270, 22, 0.16))
+    for i, (bx, by, spd) in enumerate(specs):
+        x = int((bx - cam * spd + t * 0.05) % (W + 50) - 24)
+        pygame.draw.rect(c, (255, 214, 196), (x + 2, by + 3, 22, 6))
+        pygame.draw.rect(c, CLOUD, (x, by, 18, 7))
+        pygame.draw.rect(c, CLOUD, (x + 8, by - 4, 14, 6))
+
+
+def _chunks(c, world, cam, t):
+    for origin, chunk in world.placed:
+        if origin + chunk.w < cam - 8 or origin > cam + W + 8:
+            continue
+        for px, top, pw in chunk.plats:
+            _platform(c, origin + px - cam, top, pw)
+        for hx, hy, hw, hh in chunk.hazards:
+            _thorn(c, origin + hx - cam, hy, hw, hh, t)
+        for hx, hy, hw, hh in chunk.ceilings:
+            _ceiling(c, origin + hx - cam, hy, hw, hh)
+        if chunk.name == "maali":
+            _banner(c, origin + 56 - cam, g_font=None, font=None, t=t, canvas_font=c)
+    for tile in world.crumbles:
+        if tile.x + tile.w < cam - 8 or tile.x > cam + W + 8:
+            continue
+        _crumble(c, tile.x - cam, tile.top, tile.w, tile)
+    for slab in world.movers:
+        x, top, w = slab.at(world.frame)
+        if x + w < cam - 8 or x > cam + W + 8:
+            continue
+        _mover(c, x - cam, top, w)
+
+
+def _platform(c, x, top, w):
+    x, top, w = int(x), int(top), int(w)
+    if x > W or x + w < 0:
+        return
+    kind = _plat_kind(top)
+    if kind == "ground":
+        h = H - top + 2
+        body, edge = DIRT, DIRT_DK
+        cap = GRASS
+    elif kind == "high":
+        h = 12
+        body, edge = (214, 168, 96), (150, 110, 54)
+        cap = SAND
+    else:
+        h = 12
+        body, edge = (150, 108, 70), (96, 64, 40)
+        cap = (196, 150, 86)
+    pygame.draw.rect(c, body, (x, top, w, h))
+    cap_h = 7 if kind == "ground" else 4
+    pygame.draw.rect(c, cap, (x, top, w, cap_h))
+    pygame.draw.rect(c, (210, 230, 120) if kind == "ground" else (255, 236, 190), (x, top, w, 2))
+    pygame.draw.line(c, edge, (x, top + h - 1), (x + w - 1, top + h - 1))
+    for dx in range(3, w - 2, 7):
+        _dot(c, x + dx, top + 6, edge)
+
+
+def _ceiling(c, x, y, w, h):
+    x, y, w, h = int(x), int(y), int(w), int(h)
+    if x > W or x + w < 0:
+        return
+    pygame.draw.rect(c, (70, 48, 58), (x, y, w, 4))
+    n = max(2, w // 6)
+    for i in range(n):
+        bx = x + int(i * w / n)
+        pygame.draw.polygon(c, (210, 70, 78), [(bx + 1, y + 3), (bx + 4, y + h), (bx + 7, y + 3)])
+
+
+def _crumble(c, x, top, w, tile):
+    x, top, w = int(x), int(top), int(w)
+    if not tile.live:
+        return
+    shake = (tile.timer // 3) % 2 if tile.armed else 0
+    x += shake
+    pygame.draw.rect(c, (150, 96, 58), (x, top, w, 10))
+    pygame.draw.rect(c, (196, 150, 86), (x, top, w, 3))
+    col = (80, 40, 28) if tile.armed else (90, 60, 40)
+    for dx in range(4, max(5, w - 4), 8):
+        pygame.draw.line(c, col, (x + dx, top + 3), (x + dx + 2, top + 9))
+
+
+def _mover(c, x, top, w):
+    x, top, w = int(x), int(top), int(w)
+    pygame.draw.rect(c, (70, 90, 110), (x, top + 8, w, 3))
+    pygame.draw.rect(c, (150, 186, 206), (x, top, w, 8))
+    pygame.draw.rect(c, (230, 244, 250), (x, top, w, 2))
+    pygame.draw.rect(c, (40, 60, 80), (x, top, w, 8), 1)
+
+
+def _thorn(c, x, y, w, h, t):
+    x, y, w, h = int(x), int(y), int(w), int(h)
+    pygame.draw.rect(c, (92, 48, 64), (x, y + h - 3, w, 4))
+    n = max(2, w // 5)
+    for i in range(n):
+        bx = x + int(i * w / n)
+        pygame.draw.polygon(c, (70, 120, 64), [(bx, y + h), (bx + 3, y + 1), (bx + 6, y + h)])
+        tip = (220, 60, 70) if (i + t // 8) % 2 == 0 else (255, 120, 90)
+        pygame.draw.line(c, tip, (bx + 3, y + 1), (bx + 3, y + 4))
+
+
+def _dot(c, x, y, col):
+    if 0 <= x < W and 0 <= y < H:
+        c.set_at((int(x), int(y)), col)
+
+
+def _banner(c, x, g_font, font, t, canvas_font):
+    x = int(x)
+    pole_y = EY - 46
+    if x < -40 or x > W + 10:
+        return
+    pygame.draw.rect(c, (96, 64, 40), (x, pole_y, 3, 46))
+    pygame.draw.polygon(c, (240, 96, 84), [(x + 3, pole_y), (x + 28, pole_y + 7), (x + 3, pole_y + 14)])
+    pygame.draw.polygon(c, (255, 210, 120), [(x + 3, pole_y), (x + 16, pole_y + 5), (x + 3, pole_y + 8)])
+    blit(c, _font(c), tr("finish"), x + 6, pole_y + 3, (255, 248, 230), 1, shadow=False)
+
+
+def _coins(c, coins, cam, t):
+    for coin in coins:
+        if not coin.alive:
+            continue
+        sx = int(coin.x - cam)
+        if sx < -8 or sx > W + 8:
+            continue
+        bob = int(math.sin(t * 0.18 + coin.x * 0.1) * 1.5)
+        sy = int(coin.y + bob)
+        span = 2 + int(abs(math.sin(t * 0.25 + coin.x)) * 3)
+        pygame.draw.rect(c, (120, 72, 20), (sx - span, sy - 3, span * 2, 8))
+        pygame.draw.rect(c, (255, 210, 64), (sx - span + 1, sy - 2, max(1, span * 2 - 2), 6))
+        _dot(c, sx, sy, (255, 250, 210))
+
+
+def _pickups(c, powers, cam, t):
+    for pw in powers:
+        if not pw.alive:
+            continue
+        sx = int(pw.x - cam)
+        if sx < -16 or sx > W + 16:
+            continue
+        bob = int(math.sin(t * 0.16 + pw.t * 0.2) * 2)
+        draw_power_icon(c, pw.kind, sx, int(pw.y + bob), pulse=(t // 6) % 2 == 0)
+
+
+def draw_power_icon(c, kind, x, y, pulse=False, small=False):
+    col = POWER_COLORS[kind]
+    s = 6 if small else 8
+    pygame.draw.rect(c, (255, 255, 255), (x - s - 1, y - s - 1, s * 2 + 2, s * 2 + 2))
+    pygame.draw.rect(c, col, (x - s, y - s, s * 2, s * 2))
+    if pulse and not small:
+        pygame.draw.rect(c, (255, 244, 180), (x - s - 2, y - s - 2, s * 2 + 4, s * 2 + 4), 1)
+    ink = (255, 255, 255)
+    if kind == "double":
+        pygame.draw.polygon(c, ink, [(x - 3, y + 1), (x, y - 4), (x + 1, y + 1)])
+        pygame.draw.polygon(c, ink, [(x + 1, y + 3), (x + 4, y - 2), (x + 5, y + 3)])
+    elif kind == "speed":
+        pygame.draw.polygon(c, (255, 236, 120), [(x - 2, y - 5), (x + 2, y - 5), (x - 1, y), (x + 3, y), (x - 3, y + 6), (x, y + 1), (x - 4, y + 1)])
+    elif kind == "shield":
+        pygame.draw.circle(c, ink, (x, y), s - 3, 1)
+        pygame.draw.circle(c, (230, 255, 255), (x, y), 2)
+    elif kind == "magnet":
+        pygame.draw.rect(c, ink, (x - 4, y - 3, 2, 6))
+        pygame.draw.rect(c, ink, (x + 2, y - 3, 2, 6))
+        pygame.draw.rect(c, ink, (x - 4, y + 1, 8, 2))
+    elif kind == "slow":
+        pygame.draw.circle(c, ink, (x - 2, y + 1), 3, 1)
+        pygame.draw.circle(c, ink, (x + 3, y - 1), 2, 1)
+    elif kind == "glide":
+        pygame.draw.polygon(c, ink, [(x - 6, y + 1), (x, y - 4), (x + 6, y + 1), (x, y + 2)])
+    if small:
+        return
+    # kind letter is the shape; the ring keeps it readable at a glance
+
+
+def _bits(c, bits, cam):
+    for x, y, vx, vy, life, col in bits:
+        sx = int(x - cam)
+        if 0 <= sx < W:
+            size = 2 if life > 8 else 1
+            pygame.draw.rect(c, col, (sx, int(y), size, size))
+
+
+def draw_player(c, pl, cam, t):
+    b = pl.body
+    x = int(b.x - cam)
+    y = int(b.y)
+    ghost = pl.state == "ghost"
+    col, dark = PCOLORS[pl.idx]
+    if ghost:
+        col = tuple((v + 255) // 2 for v in col)
+    if pl.slow_t > 0 and not ghost:
+        pygame.draw.ellipse(c, POWER_COLORS["slow"], (x - 6, y - 4, PW + 12, PH + 10), 2)
+    # shadow
+    pygame.draw.ellipse(c, (40, 30, 40), (x + 1, int(b.feet() - cam * 0 + 1) if False else y + PH - 1, PW, 3))
+    if pl.glide_t > 0 and not ghost:
+        cape = (x - 6, y + 4, 6, 8) if pl.face > 0 else (x + PW, y + 4, 6, 8)
+        pygame.draw.rect(c, POWER_COLORS["glide"], cape)
+    squash = pl.squash
+    bh = max(8, int(PH - 4 - squash * 6))
+    bw = PW + int(squash * 6)
+    bx = x + (PW - bw) // 2
+    by = y + PH - 4 - bh
+    pygame.draw.rect(c, dark, (bx - 1, by - 1, bw + 2, bh + 2))
+    pygame.draw.rect(c, col, (bx, by, bw, bh))
+    pygame.draw.rect(c, tuple(min(255, v + 50) for v in col), (bx + 1, by + 1, max(1, bw - 3), 2))
+    # feet
+    step = int(pl.anim / 5) % 2 if pl.state == "run" and abs(b.vx) > 0.3 else 0
+    pygame.draw.rect(c, dark, (bx + 1 + step, by + bh, 3, 3))
+    pygame.draw.rect(c, dark, (bx + bw - 5 - step, by + bh, 3, 3))
+    # face
+    ex = bx + bw // 2 + pl.face * 2
+    pygame.draw.rect(c, (255, 255, 255), (ex - 3, by + 3, 2, 3))
+    pygame.draw.rect(c, (255, 255, 255), (ex + 1, by + 3, 2, 3))
+    pygame.draw.rect(c, (20, 16, 24), (ex - 2 + (pl.face > 0), by + 4, 1, 2))
+    pygame.draw.rect(c, (20, 16, 24), (ex + 2 + (pl.face > 0), by + 4, 1, 2))
+    pygame.draw.rect(c, (90, 40, 40), (ex - 1, by + bh - 4, 3, 1))
+    _hat(c, pl.idx, bx, by, bw, col)
+    if pl.double_t > 0 and not ghost:
+        pygame.draw.polygon(c, (210, 235, 255), [(bx - 4, by + 4), (bx - 1, by + 1), (bx - 1, by + 7)])
+        pygame.draw.polygon(c, (210, 235, 255), [(bx + bw + 3, by + 4), (bx + bw, by + 1), (bx + bw, by + 7)])
+    if pl.speed_t > 0 and not ghost and t % 2 == 0:
+        for i in range(3):
+            pygame.draw.rect(c, POWER_COLORS["speed"], (bx - 5 - i * 3, by + 3 + i * 3, 3, 1))
+    if pl.shield and not ghost:
+        pygame.draw.circle(c, POWER_COLORS["shield"], (x + PW // 2, y + PH // 2), 12, 1)
+    if pl.magnet_t > 0 and not ghost:
+        ang = t * 0.3 + pl.idx
+        for k in range(3):
+            a = ang + k * 2.1
+            _dot(c, int(x + PW / 2 + math.cos(a) * 10), int(y + 4 + math.sin(a) * 6), (255, 220, 80))
+    if ghost:
+        pygame.draw.circle(c, (255, 255, 255), (x + PW // 2, y - 4), 6, 1)
+    # Power names stay on the icons. Only short status words float over a player,
+    # otherwise four runners grabbing the same row of pickups paint on top of each other.
+    if pl.popup and pl.popup[0] in (tr("ghost"), tr("out"), tr("pad")):
+        label, _life = pl.popup
+        blit(c, _font(c), label, x + PW // 2, y - 14, (255, 244, 210), 1, center=True)
+    if pl.lost_t > 0 and (t // 10) % 2 == 0:
+        blit(c, _font(c), tr("pad"), x + PW // 2, y - 22, (255, 180, 160), 1, center=True)
+
+
+def _hat(c, idx, bx, by, bw, col):
+    if idx == 0:
+        pygame.draw.rect(c, (40, 120, 48), (bx + bw // 2 - 1, by - 4, 2, 4))
+        pygame.draw.rect(c, (70, 160, 60), (bx + bw // 2 - 2, by - 6, 4, 2))
+    elif idx == 1:
+        pygame.draw.rect(c, (20, 40, 90), (bx + 1, by - 3, bw - 2, 3))
+        pygame.draw.rect(c, (20, 40, 90), (bx, by - 1, bw, 2))
+    elif idx == 2:
+        pygame.draw.polygon(c, (40, 150, 60), [(bx + bw // 2, by - 6), (bx + bw // 2 + 6, by - 1), (bx + bw // 2, by - 1)])
+    else:
+        pygame.draw.rect(c, (230, 80, 90), (bx + bw // 2 - 2, by - 4, 4, 3))
+        pygame.draw.rect(c, (255, 220, 80), (bx + bw // 2 - 1, by - 3, 2, 2))
+
+
+_FONT = None
+
+
+def _font(c):
+    global _FONT
+    if _FONT is None:
+        _FONT = Font()
+    return _FONT
+
+
+def bind_font(font):
+    global _FONT
+    _FONT = font
+
+
+def _hud(g):
+    c = g.canvas
+    bar = pygame.Surface((W, 16), pygame.SRCALPHA)
+    bar.fill((28, 18, 32, 170))
+    c.blit(bar, (0, 0))
+    font = _font(c)
+    rounds = getattr(g, "match_rounds", 3)
+    blit(c, font, tr("round", g.round_no, rounds) if g.round_no else "", 3, 1, (255, 236, 210), 1, shadow=False)
+    meters = "%d%s" % (int(g.camera) // 16, tr("meters"))
+    mw, _ = font.size(meters, 1)
+    blit(c, font, meters, W - mw - 3, 1, (255, 236, 210), 1, shadow=False)
+    n = max(1, len(g.players))
+    slot = min(70, (W - 78) // n)
+    for i, pl in enumerate(g.players):
+        x = 52 + i * slot
+        col = PCOLORS[pl.idx][0] if pl.state != "out" else (90, 80, 80)
+        pygame.draw.rect(c, col, (x, 4, 7, 7))
+        label = tr("out") if pl.state == "out" else str(pl.coins)
+        blit(c, font, label, x + 9, 2, (255, 248, 230), 1, shadow=False)
+        kind = pl.main_power()
+        if kind and pl.state == "run":
+            draw_power_icon(c, kind, x + 28, 7, small=True)
+
+
+def draw_lobby(g):
+    c = g.canvas
+    c.blit(g.sky, (0, 0))
+    _clouds(c, 0, g.t)
+    pygame.draw.rect(c, HILL, (0, 120, W, 60))
+    pygame.draw.rect(c, GRASS, (0, 116, W, 6))
+    font = _font(c)
+    bob = int(math.sin(g.t * 0.08) * 2)
+    blit(c, font, tr("title"), W // 2, 22 + bob, (120, 50, 40), 2, center=True)
+    ver = "V" + g.version
+    vw, _ = font.size(ver, 1)
+    blit(c, font, ver, W - vw - 4, 1, (150, 90, 70), 1, shadow=False)
+    blit(c, font, tr("tag"), W // 2, 40, (110, 60, 50), 1, center=True)
+    for i in range(4):
+        x = 8 + i * 78
+        box = pygame.Rect(x, 52, 74, 70)
+        pygame.draw.rect(c, (255, 244, 230), box)
+        pygame.draw.rect(c, PCOLORS[i][1], box, 2)
+        if i < len(g.players):
+            pl = g.players[i]
+            pl.body.x = x + 30
+            pl.body.y = 72 + int(abs(math.sin(g.t * 0.12 + i)) * -4)
+            pl.face = 1
+            pl.anim = g.t * 0.4
+            draw_player(c, pl, 0, g.t)
+            blit(c, font, pname(i), x + 37, 104, PCOLORS[i][0], 1, center=True)
+            if getattr(pl, "is_cpu", False):
+                blit(c, font, tr("cpu_tag"), x + 37, 54, (90, 60, 50), 1, center=True)
+        else:
+            if (g.t // 25) % 2 == 0:
+                blit(c, font, tr("press"), x + 37, 74, (140, 100, 90), 1, center=True)
+            blit(c, font, tr("join"), x + 37, 88, (120, 90, 80), 1, center=True)
+    hint = tr("start_hint") if len(g.players) >= 2 else tr("need")
+    blit(c, font, hint, W // 2, 128, (90, 50, 40), 1, center=True)
+    blit(c, font, tr("cpu_add") + "   " + tr("cpu_del"), W // 2, 144, (90, 50, 40), 1, center=True)
+    blit(c, font, tr("legend_btn") + "   " + tr("leave_hint"), W // 2, 160, (120, 80, 70), 1, center=True)
+
+
+def draw_legend(g):
+    draw_lobby(g) if g.legend_from == "lobby" else draw_world(g)
+    _panel_legend(g)
+
+
+def _panel_legend(g):
+    c = g.canvas
+    veil = pygame.Surface((W, H), pygame.SRCALPHA)
+    veil.fill((24, 14, 20, 180))
+    c.blit(veil, (0, 0))
+    font = _font(c)
+    blit(c, font, tr("legend"), W // 2, 8, (255, 220, 140), 1, center=True)
+    kinds = ("double", "speed", "shield", "magnet", "slow", "glide")
+    for i, kind in enumerate(kinds):
+        y = 24 + i * 22
+        draw_power_icon(c, kind, 18, y + 6, pulse=True)
+        blit(c, font, tr("p_" + kind), 32, y, POWER_COLORS[kind], 1)
+        blit(c, font, tr("d_" + kind), 118, y, (255, 244, 230), 1)
+    blit(c, font, tr("controls"), W // 2, 160, (255, 220, 180), 1, center=True)
+    blit(c, font, tr("back"), W // 2, 170, (255, 244, 220), 1, center=True)
+
+
+def draw_count(g):
+    font = _font(g.canvas)
+    if g.t < 36:
+        label, col = "3", (255, 120, 90)
+    elif g.t < 72:
+        label, col = "2", (255, 170, 80)
+    elif g.t < 108:
+        label, col = "1", (255, 210, 90)
+    else:
+        label, col = tr("go"), (255, 244, 160)
+    blit(g.canvas, font, label, W // 2, 78, col, 3, center=True)
+
+
+def draw_round_end(g):
+    c = g.canvas
+    veil = pygame.Surface((W, H), pygame.SRCALPHA)
+    veil.fill((20, 12, 18, 150))
+    c.blit(veil, (0, 0))
+    font = _font(c)
+    panel = pygame.Rect(16, 18, W - 32, H - 36)
+    pygame.draw.rect(c, (255, 244, 230), panel)
+    pygame.draw.rect(c, (120, 60, 48), panel, 2)
+    winners = g.round_winners or []
+    if len(winners) == 1:
+        title = tr("win", pname(winners[0].idx))
+        col = PCOLORS[winners[0].idx][0]
+    else:
+        title, col = tr("draw"), (120, 60, 48)
+    blit(c, font, title, W // 2, 26, col, 1, center=True)
+    blit(c, font, tr("board"), W // 2, 40, (120, 70, 50), 1, center=True)
+    order = sorted(g.players, key=lambda p: -p.bank)
+    for i, pl in enumerate(order):
+        y = 54 + i * 22
+        pygame.draw.rect(c, PCOLORS[pl.idx][0], (24, y, 8, 8))
+        blit(c, font, pname(pl.idx), 36, y - 1, (80, 40, 36), 1)
+        line = "%s %d  %s %d  %s %d" % (tr("coins"), pl.coins, tr("meters"), pl.round_meters, tr("total"), pl.bank)
+        blit(c, font, line, 36, y + 8, (110, 70, 55), 1)
+    if g.t > 20 and (g.t // 20) % 2 == 0:
+        blit(c, font, tr("next"), W // 2, 156, (160, 70, 50), 1, center=True)
+
+
+def draw_results(g):
+    c = g.canvas
+    c.blit(g.sky, (0, 0))
+    pygame.draw.rect(c, HILL, (0, 156, W, 24))
+    pygame.draw.rect(c, GRASS, (0, 152, W, 5))
+    font = _font(c)
+    blit(c, font, tr("results"), W // 2, 6, (120, 50, 40), 1, center=True)
+    if g.players:
+        champ = max(g.players, key=lambda p: (p.bank, p.wins, p.total_coins, -p.idx))
+        blit(c, font, tr("champ", pname(champ.idx)), W // 2, 18, PCOLORS[champ.idx][0], 1, center=True)
+        champ.body.x = W // 2 - PW // 2
+        champ.body.y = 30
+        champ.face = 1
+        champ.state = "run"
+        champ.squash = 0
+        draw_player(c, champ, 0, g.t)
+    order = sorted(g.players, key=lambda p: (-p.bank, -p.wins))
+    panel = pygame.Rect(16, 64, W - 32, 72)
+    pygame.draw.rect(c, (255, 246, 232), panel)
+    pygame.draw.rect(c, (140, 80, 60), panel, 2)
+    for i, pl in enumerate(order):
+        y = 70 + i * 16
+        pygame.draw.rect(c, PCOLORS[pl.idx][0], (28, y, 8, 8))
+        blit(c, font, pname(pl.idx), 42, y, (70, 36, 32), 1, shadow=False)
+        blit(c, font, str(pl.bank), 168, y, (90, 50, 40), 1, shadow=False)
+        for k in range(pl.wins):
+            pygame.draw.rect(c, (220, 160, 40), (230 + k * 8, y, 6, 6))
+    blit(c, font, tr("rematch") + "   " + tr("back_lobby"), W // 2, 166, (255, 248, 236), 1, center=True)
+
+
+def draw_pause(g):
+    c = g.canvas
+    veil = pygame.Surface((W, H), pygame.SRCALPHA)
+    veil.fill((20, 12, 18, 150))
+    c.blit(veil, (0, 0))
+    font = _font(c)
+    blit(c, font, tr("paused"), W // 2, 48, (255, 220, 150), 2, center=True)
+    opts = (tr("resume"), tr("to_lobby"), tr("quit"))
+    for i, label in enumerate(opts):
+        y = 84 + i * 20
+        if i == g.menu_i:
+            pygame.draw.rect(c, (255, 210, 140), (70, y - 3, 180, 16))
+        blit(c, font, label, W // 2, y, (90, 40, 36), 1, center=True)
+
+
+def draw_quit(g):
+    if g.quit_hold < 6:
+        return
+    c = g.canvas
+    bw = 120
+    x = W // 2 - bw // 2
+    pygame.draw.rect(c, (40, 20, 24), (x, 4, bw, 10))
+    pygame.draw.rect(c, (255, 244, 230), (x, 4, int(bw * min(1, g.quit_hold / 60)), 10))
+    blit(c, _font(c), tr("quitting"), W // 2, 5, (80, 30, 30), 1, center=True)
+
+
+def _settings_line(g, key):
+    st = g.settings
+    if key == "cpu":
+        return tr("opt_cpu"), str(g._cpu_count())
+    if key == "diff":
+        return tr("opt_diff"), tr("diff_" + st["cpu_diff"])
+    if key == "rounds":
+        return tr("opt_rounds"), str(st["rounds"])
+    if key == "scroll":
+        return tr("opt_scroll"), "%.2f" % st["scroll0"]
+    if key == "ramp":
+        return tr("opt_ramp"), tr("ramp_" + st["ramp"])
+    if key == "freq":
+        return tr("opt_freq"), tr("freq_" + st["power_freq"])
+    if key == "sfx":
+        return tr("opt_sfx"), str(st["sfx_vol"])
+    if key == "music":
+        return tr("opt_music"), str(st["music_vol"])
+    if key == "full":
+        return tr("opt_full"), tr("on") if st["fullscreen"] else tr("off")
+    if key == "powers":
+        return tr("opt_powers"), ""
+    if key == "legend":
+        return tr("opt_legend"), ""
+    return tr("opt_back"), ""
+
+
+def draw_settings(g):
+    c = g.canvas
+    c.blit(g.sky, (0, 0))
+    veil = pygame.Surface((W, H), pygame.SRCALPHA)
+    veil.fill((255, 244, 230, 230))
+    c.blit(veil, (0, 0))
+    font = _font(c)
+    blit(c, font, tr("settings"), W // 2, 4, (120, 50, 40), 1, center=True)
+    rows = g._settings_rows()
+    window = 9
+    start = max(0, min(g.menu_i - 4, len(rows) - window))
+    for i, key in enumerate(rows[start:start + window]):
+        y = 20 + i * 16
+        if key == rows[g.menu_i]:
+            pygame.draw.rect(c, (255, 210, 140), (8, y - 2, W - 16, 15))
+        label, value = _settings_line(g, key)
+        blit(c, font, label, 14, y, (80, 40, 36), 1, shadow=False)
+        if value:
+            vw, _ = font.size(value, 1)
+            blit(c, font, value, W - 14 - vw, y, (120, 60, 40), 1, shadow=False)
+
+
+def draw_powers(g):
+    c = g.canvas
+    c.blit(g.sky, (0, 0))
+    veil = pygame.Surface((W, H), pygame.SRCALPHA)
+    veil.fill((255, 244, 230, 230))
+    c.blit(veil, (0, 0))
+    font = _font(c)
+    blit(c, font, tr("opt_powers"), W // 2, 6, (120, 50, 40), 1, center=True)
+    rows = list(POWER_KINDS) + ["back"]
+    for i, key in enumerate(rows):
+        y = 24 + i * 18
+        if i == g.menu_i:
+            pygame.draw.rect(c, (255, 210, 140), (8, y - 2, W - 16, 16))
+        if key == "back":
+            blit(c, font, tr("opt_back"), 16, y, (80, 40, 36), 1, shadow=False)
+            continue
+        blit(c, font, tr("p_" + key), 16, y, POWER_COLORS[key], 1, shadow=False)
+        flag = tr("on") if g.settings["powers"].get(key, True) else tr("off")
+        fw, _ = font.size(flag, 1)
+        blit(c, font, flag, W - 14 - fw, y, (80, 40, 36), 1, shadow=False)
+
+
+def draw_frame(g):
+    if g.font is not None:
+        bind_font(g.font)
+    st = g.state
+    if st == "lobby":
+        draw_lobby(g)
+    elif st == "legend":
+        draw_legend(g)
+    elif st == "settings":
+        draw_settings(g)
+    elif st == "powers":
+        draw_powers(g)
+    elif st == "results":
+        draw_results(g)
+    else:
+        draw_world(g)
+        if st == "ready":
+            draw_count(g)
+        elif st == "play" and g.go_flash:
+            blit(g.canvas, _font(g.canvas), tr("go"), W // 2, 78, (255, 244, 160), 3, center=True)
+        elif st == "roundend":
+            draw_round_end(g)
+        elif st == "paused":
+            draw_pause(g)
+    draw_quit(g)
+
+# ---- game.py ----
+# Couch loop: join, run, scoreboard, again.
+# A fall or a scroll-off spends the one rescue. You come back as a ghost for a few
+# seconds, still able to pick up coins, and you rejoin if you settle on a ledge.
+# The second miss is out for the round. That is kinder than watching the rest of
+# an autoscroller from the couch, and one rescue keeps "last one running" real.
+import random
+
+import pygame
+
+
+
+class Game:
+    def __init__(self, screen):
+        self.screen = screen
+        self.canvas = pygame.Surface((W, 180))
+        self.font = Font()
+        self.sky = make_sky()
+        self.version = load_version()
+        self.pads = {}
+        kb = Pad("kb")
+        self.pads[kb.id] = kb
+        self.players = []
+        self.world = None
+        self.state = "lobby"
+        self.legend_from = "lobby"
+        self.t = 0
+        self.camera = 0.0
+        self.settings = load_settings()
+        set_volumes(self.settings["sfx_vol"], self.settings["music_vol"])
+        self.scroll = self.settings["scroll0"]
+        self.scroll_acc = RAMPS[self.settings["ramp"]]
+        self.scroll_max = max(SCROLL_MAX, self.scroll + 0.04)
+        self.match_rounds = self.settings["rounds"]
+        self.round_no = 0
+        self.settings_from = "lobby"
+        self.reopen_screen = False
+        self.round_winners = []
+        self.ending = 0
+        self.go_flash = 0
+        self.menu_i = 0
+        self.quit_hold = 0
+        self.running = True
+        self.autoplay = False
+        self.seed = 1
+        self.rng = random.Random(1)
+        self.bits = []
+        for _ in range(self.settings["cpu_players"]):
+            self.add_cpu(save=False)
+        self.stats = {
+            "frames": 0, "chunk_fail": 0, "chunk_types": 0, "validated": 0,
+            "double_air": 0, "speed_fast": 0, "shield_on": 0, "shield_block": 0,
+            "magnet_pulls": 0, "slow_on": 0, "glide_frames": 0, "ghosts": 0,
+            "outs": 0, "revives": 0, "bumps": 0, "rounds_ended": 0, "coins": 0,
+            "got_powers": [],
+        }
+
+    def public_stats(self):
+        got = list(self.stats.get("got_powers", []))
+        out = {k: v for k, v in self.stats.items() if k != "got_powers"}
+        out["got_powers"] = got
+        out["power_types"] = len(got)
+        return out
+
+    def arm_autoplay(self, seed):
+        self.autoplay = True
+        self.seed = seed
+        self.rng = random.Random(seed + 3)
+        for i, skill in enumerate((0.97, 0.9, 0.55, 0.84)):
+            pad = ScriptPad("bot%d" % i)
+            pad.skill = skill
+            pad.auto = True
+            pad.join_frame = 6 + i * 4
+            self.pads[pad.id] = pad
+
+    def goto(self, name):
+        self.state = name
+        self.t = 0
+
+    def add_player(self, pad):
+        if len(self.players) >= 4 or any(p.pad is pad for p in self.players):
+            return None
+        player = Player(len(self.players), pad)
+        player.pilot = Pilot(getattr(pad, "skill", 1.0), random.Random(self.seed + 40 + len(self.players)))
+        player.is_cpu = False
+        self.players.append(player)
+        return player
+
+    def add_cpu(self, save=True):
+        if len(self.players) >= 4:
+            return None
+        pad = ScriptPad("cpu%d" % (len(self.players) + 1))
+        pad.auto = False
+        self.pads[pad.id] = pad
+        player = self.add_player(pad)
+        if player is None:
+            return None
+        player.is_cpu = True
+        player.brain = CpuBrain(self.settings["cpu_diff"], random.Random(self.seed + 90 + player.idx))
+        self.settings["cpu_players"] = self._cpu_count()
+        if save:
+            save_settings(self.settings)
+        return player
+
+    def remove_cpu(self, save=True):
+        for player in reversed(self.players):
+            if not getattr(player, "is_cpu", False):
+                continue
+            self.players.remove(player)
+            self.pads.pop(player.pad.id, None)
+            self.reindex()
+            self.settings["cpu_players"] = self._cpu_count()
+            if save:
+                save_settings(self.settings)
+            return player
+        return None
+
+    def _cpu_count(self):
+        return sum(1 for player in self.players if getattr(player, "is_cpu", False))
+
+    def _retune_cpus(self):
+        for player in self.players:
+            if getattr(player, "is_cpu", False):
+                player.brain = CpuBrain(self.settings["cpu_diff"], random.Random(self.seed + 90 + player.idx))
+
+    def reindex(self):
+        for i, player in enumerate(self.players):
+            player.idx = i
+
+    def owner(self, pad):
+        for player in self.players:
+            if player.pad is pad:
+                return player
+        return None
+
+    # ----- devices -----
+    def handle_device(self, ev):
+        if ev.type == pygame.JOYDEVICEADDED:
+            try:
+                joy = pygame.joystick.Joystick(ev.device_index)
+            except Exception:
+                return
+            iid = joy.get_instance_id()
+            pad = None
+            try:
+                from pygame._sdl2 import controller
+                if not controller.get_init():
+                    try:
+                        controller.init()
+                    except Exception:
+                        pass
+                if controller.is_controller(ev.device_index):
+                    try:
+                        con = controller.Controller.from_joystick(joy)
+                    except Exception:
+                        con = controller.Controller(ev.device_index)
+                    pad = Pad("gc", con, iid=iid, joy=joy)
+            except Exception:
+                pad = None
+            if pad is None:
+                pad = Pad("js", joy, iid=iid, joy=joy)
+            self.pads[pad.id] = pad
+        elif ev.type == pygame.JOYDEVICEREMOVED:
+            self.drop_pad("js%d" % ev.instance_id)
+
+    def drop_pad(self, pid):
+        pad = self.pads.pop(pid, None)
+        if pad is None:
+            return
+        for player in self.players:
+            if player.pad is pad:
+                script = ScriptPad("auto-%d" % player.idx)
+                script.auto = True
+                script.skill = 0.92
+                player.pad = script
+                player.pilot = Pilot(0.92, random.Random(self.seed + 80 + player.idx))
+                player.lost_t = 150
+                self.pads[script.id] = script
+
+    def grab_pads(self):
+        if self.state not in ("play", "ready"):
+            return
+        for pad in list(self.pads.values()):
+            if self.owner(pad) is not None or not pad.pressed("jump"):
+                continue
+            for player in self.players:
+                if getattr(player.pad, "auto", False):
+                    player.pad = pad
+                    player.lost_t = 0
+                    break
+
+    # ----- frame -----
+    def poll_events(self):
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                self.running = False
+            elif ev.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
+                self.handle_device(ev)
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                self.running = False
+            else:
+                self._route_input(ev)
+
+    def _route_input(self, ev):
+        if ev.type in (pygame.KEYDOWN, pygame.KEYUP):
+            kb = self.pads.get("kb")
+            if kb is not None:
+                kb.on_key(ev.key, ev.type == pygame.KEYDOWN)
+            return
+        iid = getattr(ev, "instance_id", None)
+        if iid is None:
+            return
+        pad = self.pads.get("js%d" % int(iid))
+        if pad is not None:
+            pad.on_joy(ev)
+
+    def poll_pads(self):
+        ks = pygame.key.get_pressed()
+        pads = list(self.pads.values())
+        for player in self.players:
+            if player.pad not in pads:
+                pads.append(player.pad)
+        seen = set()
+        quitting = False
+        for pad in pads:
+            if id(pad) in seen:
+                continue
+            seen.add(id(pad))
+            pad.poll(ks)
+            if pad.held("start") and pad.held("back"):
+                quitting = True
+        self.quit_hold = self.quit_hold + 1 if quitting else 0
+
+    def drive(self):
+        for player in self.players:
+            self._drive_player(player)
+        if self.state != "lobby" or not self.autoplay:
+            return
+        for pad in self.pads.values():
+            if not pad.script or self.owner(pad) is not None:
+                continue
+            des = blank()
+            if self.t == getattr(pad, "join_frame", 8):
+                des["jump"] = True
+            pad.desired = des
+
+    def _drive_player(self, player):
+        pad = player.pad
+        if not (pad.script and (self.autoplay or pad.auto)):
+            return
+        des = blank()
+        if self.state == "lobby":
+            if self.t == 30 and player.idx == 0:
+                des["start"] = True
+        elif self.state in ("ready", "play") and player.state == "ghost":
+            solids = self._solids(player.body.x - 90, player.body.x + 160)
+            ix, iy = ghost_steer(player.body, solids)
+            des["x"], des["y"] = ix, iy
+        elif self.state in ("ready", "play") and player.state == "run":
+            solids = self._solids(player.body.x - 40, player.body.x + 130)
+            hazards = self._hazards(player.body.x - 12, player.body.x + 90)
+            _ix, held, pressed = player.pilot.decide(
+                player.body, solids, hazards,
+                glide=player.glide_t > 0, air_jumps=player.body.air_jumps,
+            )
+            des["x"] = 1.0
+            des["jump"] = bool(held or pressed)
+        elif self.state == "roundend" and self.t == 36 and player.idx == 0:
+            des["jump"] = True
+        elif self.state == "results" and self.t == 24 and player.idx == 0:
+            des["jump"] = True
+        pad.desired = des
+
+    def _solids(self, x0, x1):
+        if self.world is None:
+            return []
+        return self.world.solids_near(x0, x1)
+
+    def _hazards(self, x0, x1):
+        if self.world is None:
+            return []
+        return self.world.hazards_near(x0, x1)
+
+    def burst(self, x, y, color, n=6):
+        for _ in range(n):
+            if len(self.bits) > 70:
+                self.bits.pop(0)
+            self.bits.append([
+                x, y, random.uniform(-0.7, 0.7), random.uniform(-1.1, 0.15),
+                random.randint(10, 18), color,
+            ])
+
+    def _fade_bits(self):
+        kept = []
+        for bit in self.bits:
+            bit[0] += bit[2]
+            bit[1] += bit[3]
+            bit[3] += 0.05
+            bit[4] -= 1
+            if bit[4] > 0:
+                kept.append(bit)
+        self.bits = kept
+
+    def think_cpus(self):
+        if self.state not in ("ready", "play") or self.world is None:
+            return
+        for player in self.players:
+            if not getattr(player, "is_cpu", False):
+                continue
+            solids = self._solids(player.body.x - 50, player.body.x + 170)
+            hazards = self._hazards(player.body.x - 16, player.body.x + 120)
+            player.pad.desired = player.brain.decide(player, solids, hazards, self.world.powers, self.players)
+
+    def update(self):
+        self.poll_events()
+        self.drive()
+        self.think_cpus()
+        self.poll_pads()
+        self.t += 1
+        self.stats["frames"] += 1
+        self._fade_bits()
+        if self.quit_hold >= 60:
+            self.running = False
+            return
+        self.grab_pads()
+        getattr(self, "up_" + self.state)()
+
+    def up_lobby(self):
+        for pad in list(self.pads.values()):
+            if getattr(pad, "script", False) and not pad.auto and self.owner(pad) is not None:
+                if getattr(self.owner(pad), "is_cpu", False):
+                    continue
+            if pad.pressed("alt"):
+                self.settings_from = "lobby"
+                self.menu_i = 0
+                self.goto("settings")
+                return
+            owned = self.owner(pad)
+            if owned is not None and not getattr(owned, "is_cpu", False) and pad.pressed("back"):
+                self.players.remove(owned)
+                self.reindex()
+                continue
+            if pad.pressed("circle"):
+                self.add_cpu()
+                continue
+            if pad.pressed("menu"):
+                self.remove_cpu()
+                continue
+            if owned is None and pad.pressed("jump") and not pad.pressed("circle"):
+                self.add_player(pad)
+        if len(self.players) >= 2 and any(
+            pad.pressed("start") and not getattr(self.owner(pad), "is_cpu", False)
+            for pad in self.pads.values()
+        ):
+            self.begin_round()
+
+    def up_legend(self):
+        for pad in self.pads.values():
+            if getattr(self.owner(pad), "is_cpu", False):
+                continue
+            if pad.pressed("jump") or pad.pressed("back") or pad.pressed("alt") or pad.pressed("start"):
+                self.goto(self.legend_from)
+                return
+
+    def _settings_rows(self):
+        return ("cpu", "diff", "rounds", "scroll", "ramp", "freq", "sfx", "music", "full", "powers", "legend", "back")
+
+    def up_settings(self):
+        rows = self._settings_rows()
+        n = len(rows)
+        # Snapshot: changing the CPU count adds or removes a pad. Doing that
+        # while iterating self.pads raises RuntimeError and the game dies.
+        for pad in list(self.pads.values()):
+            owner = self.owner(pad)
+            if owner is not None and getattr(owner, "is_cpu", False):
+                continue
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % n
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] >= -0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % n
+            left = pad.cur["x"] < -0.5 and pad.prev["x"] >= -0.5
+            right = pad.cur["x"] > 0.5 and pad.prev["x"] <= 0.5
+            pick = pad.pressed("jump") or pad.pressed("start")
+            if pad.pressed("back") or pad.pressed("alt"):
+                self.goto(self.settings_from)
+                return
+            key = rows[self.menu_i]
+            if key == "back" and pick:
+                self.goto(self.settings_from)
+                return
+            if key == "legend" and pick:
+                self.legend_from = "settings"
+                self.goto("legend")
+                return
+            if key == "powers" and pick:
+                self.menu_i = 0
+                self.goto("powers")
+                return
+            if left or right:
+                self._tweak(key, 1 if right else -1)
+
+    def up_powers(self):
+        n = len(POWER_KINDS) + 1
+        for pad in list(self.pads.values()):
+            owner = self.owner(pad)
+            if owner is not None and getattr(owner, "is_cpu", False):
+                continue
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % n
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] >= -0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % n
+            if pad.pressed("back") or (self.menu_i == n - 1 and (pad.pressed("jump") or pad.pressed("start"))):
+                self.menu_i = 0
+                self.goto("settings")
+                return
+            if pad.pressed("jump") or pad.pressed("start") or pad.pressed("menu"):
+                if self.menu_i < len(POWER_KINDS):
+                    kind = POWER_KINDS[self.menu_i]
+                    self.settings["powers"][kind] = not self.settings["powers"].get(kind, True)
+                    save_settings(self.settings)
+
+    def _tweak(self, key, direction):
+        st = self.settings
+        if key == "cpu":
+            humans = sum(1 for p in self.players if not getattr(p, "is_cpu", False))
+            cap = min(3, 4 - humans)
+            want = max(0, min(cap, self._cpu_count() + direction))
+            guard = 0
+            while self._cpu_count() < want and guard < 4:
+                guard += 1
+                if self.add_cpu(save=False) is None:
+                    break
+            while self._cpu_count() > want and guard < 8:
+                guard += 1
+                if self.remove_cpu(save=False) is None:
+                    break
+            st["cpu_players"] = self._cpu_count()
+        elif key == "diff":
+            i = DIFFS.index(st["cpu_diff"]) if st["cpu_diff"] in DIFFS else 1
+            st["cpu_diff"] = DIFFS[(i + direction) % len(DIFFS)]
+            self._retune_cpus()
+        elif key == "rounds":
+            st["rounds"] = max(1, min(7, st["rounds"] + direction))
+            self.match_rounds = st["rounds"]
+        elif key == "scroll":
+            steps = list(SCROLL_STEPS)
+            cur = min(steps, key=lambda v: abs(v - st["scroll0"]))
+            i = steps.index(cur)
+            st["scroll0"] = steps[max(0, min(len(steps) - 1, i + direction))]
+        elif key == "ramp":
+            names = list(RAMPS)
+            i = names.index(st["ramp"]) if st["ramp"] in names else 1
+            st["ramp"] = names[(i + direction) % len(names)]
+        elif key == "freq":
+            names = list(FREQS)
+            i = names.index(st["power_freq"]) if st["power_freq"] in names else 1
+            st["power_freq"] = names[(i + direction) % len(names)]
+        elif key == "sfx":
+            st["sfx_vol"] = max(0, min(10, st["sfx_vol"] + direction))
+            set_volumes(st["sfx_vol"], st["music_vol"])
+        elif key == "music":
+            st["music_vol"] = max(0, min(10, st["music_vol"] + direction))
+            set_volumes(st["sfx_vol"], st["music_vol"])
+        elif key == "full":
+            st["fullscreen"] = not st["fullscreen"]
+            self.reopen_screen = True
+        else:
+            return
+        save_settings(st)
+
+    def up_ready(self):
+        # Countdown is a hard lock: no input, no scroll, nobody creeps forward.
+        if self.t >= 108:
+            sfx("go")
+            self.go_flash = 28
+            self.goto("play")
+            self.up_play()
+
+    def up_play(self):
+        if self.go_flash:
+            self.go_flash -= 1
+        if self._wants_pause():
+            self.menu_i = 0
+            self.goto("paused")
+            return
+        if not self.ending:
+            self.scroll = min(self.scroll_max, self.scroll + self.scroll_acc)
+            self.camera += self.scroll
+            self.world.ensure(self.camera, self.scroll)
+            self.world.advance()
+            names = {chunk.name for _origin, chunk in self.world.placed}
+            if len(names) > self.stats["chunk_types"]:
+                self.stats["chunk_types"] = len(names)
+        self._move(kill=not self.ending)
+        if self.world is not None:
+            self.world.arm_crumbles(self.players)
+        if self.ending:
+            self.ending -= 1
+            if self.ending <= 0:
+                self._finish_round()
+        else:
+            self._maybe_end()
+
+    def up_paused(self):
+        for player in self.players:
+            pad = player.pad
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % 3
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] >= -0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % 3
+            if pad.pressed("back"):
+                self.goto("play")
+                return
+            if pad.pressed("jump") or pad.pressed("start"):
+                self._pause_pick()
+                return
+
+    def up_roundend(self):
+        if self.t > 20 and any(p.pad.pressed("jump") or p.pad.pressed("start") for p in self.players):
+            if self.round_no >= self.match_rounds:
+                self.goto("results")
+            else:
+                self.begin_round()
+
+    def up_results(self):
+        if any(p.pad.pressed("back") for p in self.players):
+            self._to_lobby()
+            return
+        if self.t > 12 and any(p.pad.pressed("jump") or p.pad.pressed("start") for p in self.players):
+            self._rematch()
+
+    def _wants_pause(self):
+        if self.autoplay or self.ending:
+            return False
+        for player in self.players:
+            pad = player.pad
+            if pad.pressed("start") and not pad.held("back"):
+                return True
+        return False
+
+    def _pause_pick(self):
+        if self.menu_i == 0:
+            self.goto("play")
+        elif self.menu_i == 1:
+            self._to_lobby()
+        else:
+            self.running = False
+
+    def _to_lobby(self):
+        for player in self.players:
+            player.bank = 0
+            player.wins = 0
+            player.total_coins = 0
+        self.round_no = 0
+        self.world = None
+        self.goto("lobby")
+
+    def _rematch(self):
+        for player in self.players:
+            player.bank = 0
+            player.wins = 0
+            player.total_coins = 0
+        self.round_no = 0
+        self.begin_round()
+
+    def begin_round(self):
+        self.round_no += 1
+        st = self.settings
+        self.match_rounds = st["rounds"]
+        self.scroll_acc = RAMPS[st["ramp"]]
+        freq = FREQS[st["power_freq"]]
+        self.world = World(self.rng, powers_on=st["powers"], power_freq=freq)
+        self.stats["validated"] = chunk_count()
+        self.stats["chunk_fail"] = 0
+        self.camera = 0.0
+        self.scroll = max(SCROLL0, st["scroll0"])
+        self.scroll_max = max(SCROLL_MAX, self.scroll + 0.04)
+        self.ending = 0
+        self.go_flash = 0
+        self.round_winners = []
+        for i, player in enumerate(self.players):
+            player.reset_round()
+            player.body.x = 168 + i * 12
+            player.body.y = EY - PH
+            player.body.vx = 0.0
+            player.body.on_ground = True
+            player.max_x = player.body.x
+        self.goto("ready")
+
+    def _move(self, kill):
+        for player in self.players:
+            pad = player.pad
+            ix = pad.cur["x"]
+            iy = pad.cur["y"]
+            if player.state == "run":
+                solids = self._solids(player.body.x - 48, player.body.x + 110)
+                hazards = self._hazards(player.body.x - 20, player.body.x + 40)
+                did = tick_runner(player, ix, pad.held("jump"), pad.pressed("jump"), solids, self.stats)
+                if did == "jump":
+                    sfx("jump")
+                hit = touch_hazard(player, hazards, self.stats)
+                if hit == "hit":
+                    sfx("hit")
+                    self.burst(player.body.x + 6, player.body.y + 8, (210, 70, 60))
+                elif hit == "block":
+                    sfx("power")
+                    self.burst(player.body.x + 6, player.body.y + 4, (120, 230, 220))
+                clamp_runner(player, self.camera, self.scroll if self.state == "play" else 0.0)
+                if kill:
+                    why = fate(player, self.camera)
+                    if why:
+                        result = start_ghost(player, self.camera)
+                        if result == "ghost":
+                            self.stats["ghosts"] += 1
+                            sfx("ghost")
+                        else:
+                            self.stats["outs"] += 1
+                            sfx("out")
+            elif player.state == "ghost":
+                solids = self._solids(self.camera - 20, self.camera + W + 20)
+                result = tick_ghost(player, ix, iy, solids, self.camera, self.scroll)
+                if result == "revive":
+                    self.stats["revives"] += 1
+                    sfx("revive")
+                elif result == "expire":
+                    self.stats["outs"] += 1
+                    sfx("out")
+            if player.state in ("run", "ghost") and player.body.x > player.max_x:
+                player.max_x = player.body.x
+        separate_bumps(self.players, self.stats)
+        if self.world is not None:
+            pull_coins(self.players, self.world.coins, self.stats)
+            runners = [p for p in self.players if p.state == "run"]
+            for player in self.players:
+                for event in collect(player, self.world.coins, self.world.powers, self.players, self.stats):
+                    if event == "coin":
+                        sfx("coin")
+                        self.burst(player.body.x, player.body.y, (255, 210, 70), 4)
+                    else:
+                        sfx("power")
+                        self.burst(player.body.x, player.body.y - 6, (255, 244, 210), 8)
+            tick_pickups(self.world.powers, runners)
+        for player in self.players:
+            player.tick_timers()
+
+    def _maybe_end(self):
+        running = [p for p in self.players if p.state == "run"]
+        ghosts = [p for p in self.players if p.state == "ghost"]
+        finish = self.world.finish_x if self.world else None
+        reached = finish is not None and (
+            self.camera + W * 0.55 >= finish or any(p.body.x >= finish and p.state == "run" for p in self.players)
+        )
+        last = len(running) <= 1 and not ghosts
+        none = not running and not ghosts
+        if reached or last or none:
+            self.ending = 28
+
+    def _finish_round(self):
+        self.round_winners = award(self.players)
+        self.stats["rounds_ended"] += 1
+        sfx("win")
+        self.ending = 0
+        self.goto("roundend")
+
+    def draw(self):
+        draw_frame(self)
+        self.screen.blit(self.canvas, (0, 0))
+
+# ---- main.py ----
+# Batocera: copy the built Kultakiri<version>.pygame to /userdata/roms/pygame/
+import json
+import os
+import sys
+import traceback
+
+import pygame
+
+
+
+def open_screen():
+    want_full = bool(load_settings().get("fullscreen", True))
+    windowed = bool(os.environ.get("KULTAKIRI_WINDOWED")) or not want_full
+    fast = bool(os.environ.get("KULTAKIRI_FRAMES") or os.environ.get("KULTAKIRI_AUTOPLAY"))
+    dummy = os.environ.get("SDL_VIDEODRIVER") == "dummy"
+    flags = 0 if dummy else pygame.SCALED
+    if not windowed and not dummy:
+        flags |= pygame.FULLSCREEN
+    vsync = 0 if fast or dummy else 1
+    try:
+        return pygame.display.set_mode((W, H), flags, vsync=vsync)
+    except TypeError:
+        try:
+            return pygame.display.set_mode((W, H), flags)
+        except pygame.error:
+            return pygame.display.set_mode((W, H))
+    except pygame.error:
+        return pygame.display.set_mode((W, H))
+
+
+def write_crash_log():
+    path = crash_log_path()
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(traceback.format_exc())
+    except OSError:
+        return None
+    return path
+
+
+def main():
+    try:
+        return _main()
+    except Exception:
+        write_crash_log()
+        try:
+            pygame.quit()
+        except Exception:
+            pass
+        return 1
+
+
+def _main():
+    os.environ.setdefault("SDL_GAMECONTROLLER_ALLOW_BACKGROUND_EVENTS", "1")
+    frames = int(os.environ.get("KULTAKIRI_FRAMES") or "0")
+    fast = bool(frames or os.environ.get("KULTAKIRI_AUTOPLAY"))
+    prepare_audio()
+    pygame.init()
+    start_audio()
+    try:
+        from pygame._sdl2 import controller
+        controller.init()
+    except Exception:
+        pass
+    screen = open_screen()
+    pygame.display.set_caption("KULTAKIRI")
+    pygame.mouse.set_visible(False)
+    game = Game(screen)
+    if os.environ.get("KULTAKIRI_AUTOPLAY"):
+        game.arm_autoplay(int(os.environ.get("KULTAKIRI_SEED") or "1"))
+    clock = pygame.time.Clock()
+    n = 0
+    while game.running:
+        game.update()
+        if game.reopen_screen:
+            game.reopen_screen = False
+            screen = open_screen()
+            game.screen = screen
+        game.draw()
+        pygame.display.flip()
+        if not fast:
+            clock.tick(FPS)
+        n += 1
+        if frames and n >= frames:
+            break
+    if game.autoplay:
+        print("KULTAKIRI_STATS " + json.dumps(game.public_stats(), separators=(",", ":")))
+    pygame.quit()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
