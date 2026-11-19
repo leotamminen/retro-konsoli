@@ -8,17 +8,17 @@ from highlights import Event, choose_highlights
 from record import Recorder, cut_clip
 
 
-def run_session(adapter, players, rounds, seed, out_dir, max_seconds=0):
+def run_session(adapter, players, rounds, seed, out_dir, max_seconds=0, cpus=0, difficulty="normaali", video=True):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    adapter.start(players, seed, rounds)
-    video = out_dir / "full.mp4"
-    recorder = Recorder(video, adapter.width, adapter.height, fps=adapter.video_fps)
+    adapter.start(players, seed, rounds, cpus=cpus, difficulty=difficulty)
+    video_path = out_dir / "full.mp4"
+    recorder = Recorder(video_path, adapter.width, adapter.height, fps=adapter.video_fps) if video else None
     events = []
     frame = 0
     frame_times = []
     last_spike = -9999
-    max_frames = adapter.sim_fps * 60 * 4
+    max_frames = adapter.sim_fps * 60 * (12 if not video else 8)
     crashed = None
     try:
         while frame < max_frames and not adapter.finished():
@@ -28,7 +28,8 @@ def run_session(adapter, players, rounds, seed, out_dir, max_seconds=0):
             t0 = time.perf_counter()
             try:
                 adapter.tick()
-                adapter.draw()
+                if video:
+                    adapter.draw()
             except Exception:
                 crashed = traceback.format_exc()
                 events.append(Event(
@@ -49,7 +50,7 @@ def run_session(adapter, players, rounds, seed, out_dir, max_seconds=0):
                         90, True,
                     ))
             events.extend(adapter.collect(frame))
-            if frame % (adapter.sim_fps // adapter.video_fps) == 0:
+            if recorder is not None and frame % (adapter.sim_fps // adapter.video_fps) == 0:
                 recorder.write(adapter.surface())
             frame += 1
             if frame % (adapter.sim_fps * 15) == 0:
@@ -57,22 +58,24 @@ def run_session(adapter, players, rounds, seed, out_dir, max_seconds=0):
         if frame >= max_frames and not adapter.finished():
             events.append(Event(
                 frame / float(adapter.sim_fps), frame, "anomaly",
-                "Stopped after 4 minutes because the round never finished",
+                "Stopped because the round never finished inside the time limit",
                 100, True,
             ))
     finally:
-        recorder.close()
+        if recorder is not None:
+            recorder.close()
         adapter.close()
 
-    video_len = recorder.frames / float(adapter.video_fps) if recorder.frames else 0.0
-    clips = choose_highlights(events, video_len, limit=5)
+    video_len = (recorder.frames / float(adapter.video_fps)) if recorder and recorder.frames else (frame / float(adapter.sim_fps))
+    clips = choose_highlights(events, video_len, limit=5) if recorder else []
     clip_dir = out_dir / "clips"
     written = []
-    for i, clip in enumerate(clips, 1):
-        slug = "%02d-%s" % (i, clip.title.replace(" ", "-"))
-        dest = clip_dir / ("%s.mp4" % slug)
-        cut_clip(video, dest, clip.start, clip.duration)
-        written.append((clip, dest))
+    if recorder is not None:
+        for i, clip in enumerate(clips, 1):
+            slug = "%02d-%s" % (i, clip.title.replace(" ", "-"))
+            dest = clip_dir / ("%s.mp4" % slug)
+            cut_clip(video_path, dest, clip.start, clip.duration)
+            written.append((clip, dest))
 
     log_path = out_dir / "events.jsonl"
     with log_path.open("w", encoding="utf-8") as fh:
@@ -86,11 +89,14 @@ def run_session(adapter, players, rounds, seed, out_dir, max_seconds=0):
             }, ensure_ascii=False) + "\n")
 
     report = out_dir / "report.md"
-    report.write_text(_report(adapter, players, rounds, seed, video, video_len, events, written, crashed), encoding="utf-8")
-    print("wrote %s (%d frames, %.1fs)" % (video, recorder.frames, video_len))
+    report.write_text(_report(adapter, players, rounds, seed, video_path, video_len, events, written, crashed), encoding="utf-8")
+    if recorder is not None:
+        print("wrote %s (%d frames, %.1fs)" % (video_path, recorder.frames, video_len))
+    else:
+        print("no video  %.1fs simulated" % video_len)
     print("wrote %s" % report)
     return {
-        "video": video,
+        "video": video_path if recorder is not None else None,
         "report": report,
         "clips": written,
         "events": events,
@@ -156,6 +162,9 @@ def _report(adapter, players, rounds, seed, video, video_len, events, clips, cra
         seen = extra.get("right_edge_samples", 0)
         lines.append("- Right-edge samples without speed: %d / %d" % (hits, seen))
         lines.append("- Moves during the countdown: %d" % extra.get("moved_before_go", 0))
+        for i, row in enumerate(extra.get("rounds") or [], 1):
+            who = ", ".join(row.get("names") or [])
+            lines.append("- Round %d: %.1fs, ahead %s" % (i, row.get("seconds", 0), who))
         lines.append("")
     lines.extend(["## Notable moments", ""])
     shown = 0

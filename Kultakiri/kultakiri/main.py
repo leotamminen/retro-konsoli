@@ -10,7 +10,9 @@ from .game import Game
 
 
 def open_screen():
-    windowed = bool(os.environ.get("KULTAKIRI_WINDOWED"))
+    from .settings import load_settings
+    want_full = bool(load_settings().get("fullscreen", True))
+    windowed = bool(os.environ.get("KULTAKIRI_WINDOWED")) or not want_full
     fast = bool(os.environ.get("KULTAKIRI_FRAMES") or os.environ.get("KULTAKIRI_AUTOPLAY"))
     dummy = os.environ.get("SDL_VIDEODRIVER") == "dummy"
     flags = 0 if dummy else pygame.SCALED
@@ -50,6 +52,10 @@ def main():
     n = 0
     while game.running:
         game.update()
+        if game.reopen_screen:
+            game.reopen_screen = False
+            screen = open_screen()
+            game.screen = screen
         game.draw()
         pygame.display.flip()
         if not fast:

@@ -87,22 +87,40 @@ class KultakiriAdapter:
         self.moved_before_go = 0
         self._ready_xy = None
         self._seen_chunks = set()
+        self._speed_until = {}
+        self.round_log = []
+        self._play_t = 0.0
 
-    def start(self, players, seed, rounds):
-        if players < 2 or players > 4:
-            raise SystemExit("kultakiri needs 2 to 4 players")
+    def start(self, players, seed, rounds, cpus=0, difficulty="normaali"):
+        total = players + cpus
+        if players < 1 or total < 2 or total > 4:
+            raise SystemExit("kultakiri needs 2 to 4 participants")
         self.rounds = rounds
         self.seed = seed
+        self.round_log = []
+        self._play_t = 0.0
+        self._speed_until = {}
         pygame.init()
         screen = pygame.display.set_mode((W, H))
         pygame.display.set_caption("KULTAKIRI playtest")
         game = Game(screen)
         game.seed = seed
         game.rng = random.Random(seed + 3)
+        # A settings file on disk must not change the race we are measuring.
+        for player in list(game.players):
+            game.players.remove(player)
+            if getattr(player, "is_cpu", False):
+                game.pads.pop(player.pad.id, None)
+        game.settings["cpu_diff"] = difficulty
+        game.settings["rounds"] = max(rounds, game.settings["rounds"])
+        game.match_rounds = game.settings["rounds"]
+        game.settings["scroll0"] = game.settings.get("scroll0") or game.scroll
         rng = random.Random(seed)
         skills = (0.94, 0.86, 0.64, 0.78)[:players]
-        if players == 2:
+        if players == 2 and cpus == 0:
             skills = (0.9, 0.66)
+        elif players == 1:
+            skills = (0.88,)
         self.bots = []
         for i, skill in enumerate(skills):
             pad = ScriptPad("bot%d" % i)
@@ -110,6 +128,8 @@ class KultakiriAdapter:
             game.pads[pad.id] = pad
             game.add_player(pad)
             self.bots.append(RunnerBot(skill, random.Random(rng.randrange(1, 10 ** 9))))
+        for _ in range(cpus):
+            game.add_cpu(save=False)
         game.begin_round()
         self.game = game
         self._prev = None
@@ -152,17 +172,19 @@ class KultakiriAdapter:
         game = self.game
         t = frame / float(self.sim_fps)
         snaps = []
-        for player, bot in zip(game.players, self.bots):
+        for i, player in enumerate(game.players):
+            bot = self.bots[i] if i < len(self.bots) else None
             body = player.body
             snaps.append({
                 "idx": player.idx,
                 "name": PNAMES[player.idx],
                 "state": player.state,
                 "x": body.x, "y": body.y, "vx": body.vx, "vy": body.vy,
-                "command_x": bot.command_x,
+                "command_x": bot.command_x if bot is not None else player.pad.cur.get("x", 0),
                 "double": player.double_t, "speed": player.speed_t,
                 "shield": player.shield_t, "magnet": player.magnet_t,
                 "slow": player.slow_t, "glide": player.glide_t,
+                "cpu": bool(getattr(player, "is_cpu", False)),
             })
         events = []
         if self._prev is not None:
@@ -188,6 +210,7 @@ class KultakiriAdapter:
             "right_edge_without_speed": self.right_hits,
             "right_edge_samples": self.right_seen,
             "moved_before_go": self.moved_before_go,
+            "rounds": list(self.round_log),
         }
 
     def _race_checks(self, frame, t):
@@ -204,7 +227,12 @@ class KultakiriAdapter:
         if game.state == "play":
             limit = W - 12 - 8
             for player in game.players:
+                if player.speed_t > 0:
+                    # A speed boost may touch the edge. The rule is about a normal run.
+                    self._speed_until[player.idx] = frame + self.sim_fps * 4
                 if player.state != "run" or player.speed_t > 0:
+                    continue
+                if frame < self._speed_until.get(player.idx, -1):
                     continue
                 self.right_seen += 1
                 if player.body.x - game.camera >= limit:
@@ -248,11 +276,22 @@ class KultakiriAdapter:
             if snap["state"] in ("run", "ghost"):
                 out.extend(self._bounds(frame, t, snap))
                 out.extend(self._stuck(frame, t, snap, game.state))
+        if self._prev_state == "ready" and game.state == "play":
+            self._play_t = t
         if self._prev_state != "roundend" and game.state == "roundend":
-            winners = [PNAMES[p.idx] for p in game.round_winners] or ["nobody"]
+            winners = list(game.round_winners)
+            names = [PNAMES[p.idx] for p in winners] or ["nobody"]
+            length = t - getattr(self, "_play_t", t)
+            cpu_win = any(getattr(p, "is_cpu", False) for p in winners)
+            self.round_log.append({
+                "seconds": round(length, 2),
+                "names": names,
+                "cpu_win": cpu_win,
+                "human_win": bool(winners) and not cpu_win,
+            })
             out.append(Event(
                 t, frame, "round_end",
-                "Round %d ended. Ahead: %s" % (game.round_no, ", ".join(winners)),
+                "Round %d ended after %.1fs. Ahead: %s" % (game.round_no, length, ", ".join(names)),
                 70,
             ))
             self._round_ends += 1

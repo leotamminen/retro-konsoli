@@ -218,7 +218,7 @@ def start_ghost(player, camera_x):
     player.state = "ghost"
     player.ghost_t = GHOST_FRAMES
     player.ghost_land = 0
-    player.body.x = camera_x + 30
+    player.body.x = camera_x + 56
     player.body.y = 52
     player.body.vx = 0.0
     player.body.vy = 0.0

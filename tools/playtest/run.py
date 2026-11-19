@@ -21,6 +21,9 @@ def parse_args(argv):
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--out", type=Path, default=None, help="Output directory (default: tools/playtest/out/...)")
     parser.add_argument("--max-seconds", type=float, default=0, help="Stop early. 0 plays until the rounds finish.")
+    parser.add_argument("--cpus", type=int, default=0, help="CPU opponents. --players counts human-like bots.")
+    parser.add_argument("--difficulty", default="normaali", choices=("helppo", "normaali", "vaikea"))
+    parser.add_argument("--no-video", action="store_true", help="Skip ffmpeg. Still plays the rounds.")
     return parser.parse_args(argv)
 
 
@@ -39,8 +42,15 @@ def main(argv=None):
     out = args.out
     if out is None:
         out = HERE / "out" / ("%s-p%d-seed%d" % (adapter.name, args.players, args.seed))
-    print("playtest %s  players=%d rounds=%d seed=%d" % (adapter.name, args.players, args.rounds, args.seed))
-    run_session(adapter, args.players, args.rounds, args.seed, out, max_seconds=args.max_seconds)
+    print(
+        "playtest %s  players=%d cpus=%d difficulty=%s rounds=%d seed=%d"
+        % (adapter.name, args.players, args.cpus, args.difficulty, args.rounds, args.seed)
+    )
+    run_session(
+        adapter, args.players, args.rounds, args.seed, out,
+        max_seconds=args.max_seconds, cpus=args.cpus,
+        difficulty=args.difficulty, video=not args.no_video,
+    )
 
 
 if __name__ == "__main__":

@@ -1,99 +1,58 @@
-# Chunky 5x7 glyphs, including Ä Ö Å, so the Pi does not need a system font.
+# Kultakiri text uses the shared Tuonelan Polku bitmap font.
+import os
+import sys
+
 import pygame
 
-_G = {
-    "A": "01110100011000111111100011000110001",
-    "B": "11110100011000111110100011000111110",
-    "C": "01111100001000010000100001000001111",
-    "D": "11110100011000110001100011000111110",
-    "E": "11111100001000011110100001000011111",
-    "F": "11111100001000011110100001000010000",
-    "G": "01111100001000010111100011000101111",
-    "H": "10001100011000111111100011000110001",
-    "I": "11111001000010000100001000010001111",
-    "J": "00111000100001000010000101001001100",
-    "K": "10001100101010011000101001001010001",
-    "L": "10000100001000010000100001000011111",
-    "M": "10001110111010110001100011000110001",
-    "N": "10001110011010110011100011000110001",
-    "O": "01110100011000110001100011000101110",
-    "P": "11110100011000111110100001000010000",
-    "Q": "01110100011000110001101011001001101",
-    "R": "11110100011000111110101001001010001",
-    "S": "01111100001000001110000010000111110",
-    "T": "11111001000010000100001000010000100",
-    "U": "10001100011000110001100011000101110",
-    "V": "10001100011000110001010100101000100",
-    "W": "10001100011000110101101011010101010",
-    "X": "10001100010101000100010101000110001",
-    "Y": "10001100010101000100001000010000100",
-    "Z": "11111000010001000100010001000011111",
-    "0": "01110100011001110101110011000101110",
-    "1": "00100011000010000100001000010001110",
-    "2": "01110100010000100010001000100011111",
-    "3": "11110000010000101110000010000111110",
-    "4": "00010001100101010010111110001000010",
-    "5": "11111100001000011110000010000111110",
-    "6": "01110100001000011110100011000101110",
-    "7": "11111000010001000100010000100001000",
-    "8": "01110100011000101110100011000101110",
-    "9": "01110100011000101111000010000101110",
-    "Ä": "10101000000111010001111111000110001",
-    "Ö": "10101000000111010001100011000101110",
-    "Å": "00100010100111010001111111000110001",
-    ".": "00000000000000000000000000110001100",
-    "!": "00100001000010000100001000000000100",
-    "?": "01110100010000100110001000000000100",
-    ":": "00000011000110000000011000110000000",
-    "-": "00000000000000011111000000000000000",
-    "+": "00000001000010011111001000010000000",
-    "/": "00001000010001000100010001000010000",
-    "'": "00100001000100000000000000000000000",
-    " ": "00000000000000000000000000000000000",
-}
+_common = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "common"))
+if _common not in sys.path:
+    sys.path.insert(0, _common)
+from pixelfont import PixelFont
+
+_CACHE = {}
+
+
+def get_font(scale=1, tall=None, bold=None):
+    if tall is None:
+        tall = True
+    if bold is None:
+        bold = scale >= 2
+    key = (int(scale), bool(tall), bool(bold))
+    font = _CACHE.get(key)
+    if font is None:
+        font = PixelFont(tall=tall, scale=int(scale), bold=bold, space=3)
+        _CACHE[key] = font
+    return font
 
 
 def has_glyph(ch):
-    return ch in _G
+    if ch == " ":
+        return True
+    font = get_font(1)
+    return ch in font.glyphs or ch.upper() in font.glyphs
 
 
 class Font:
-    def __init__(self):
-        self.cache = {}
+    """Kept so older call sites can still pass a font object into blit()."""
 
-    def size(self, text, scale=1):
-        if not text:
-            return 0, 7 * scale
-        return len(text) * 6 * scale - scale, 7 * scale
+    def __init__(self, scale=1):
+        self.scale = scale
 
-    def render(self, text, color, scale=1):
-        key = (text, color, scale)
-        hit = self.cache.get(key)
-        if hit is not None:
-            return hit
-        w, h = self.size(text, scale)
-        surf = pygame.Surface((max(1, w), max(1, h)), pygame.SRCALPHA)
-        if w and text:
-            x = 0
-            adv = 6 * scale
-            for ch in text:
-                bits = _G.get(ch, _G["?"])
-                for i, bit in enumerate(bits):
-                    if bit == "1":
-                        pygame.draw.rect(surf, color, (x + (i % 5) * scale, (i // 5) * scale, scale, scale))
-                x += adv
-        self.cache[key] = surf
-        return surf
+    def size(self, text, scale=None):
+        sc = self.scale if scale is None else scale
+        return get_font(sc).size(text)
 
 
 def blit(surf, font, text, x, y, color, scale=1, center=False, shadow=True):
     if not text:
         return
-    img = font.render(text, color, scale)
+    sc = scale
+    face = get_font(sc)
+    img = face.render(text, False, color)
     if center:
         x -= img.get_width() // 2
         y -= img.get_height() // 2
     if shadow:
-        sh = font.render(text, (32, 18, 28), scale)
-        surf.blit(sh, (x + scale, y + scale))
+        sh = face.render(text, False, (32, 18, 28))
+        surf.blit(sh, (x + max(1, sc // 2), y + max(1, sc // 2)))
     surf.blit(img, (x, y))

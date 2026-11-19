@@ -18,13 +18,15 @@ SPEED_RUN = 2.58
 ACCEL = 0.62
 COYOTE = 6
 JUMP_BUF = 6
-SLOW_MUL = 0.84
+SLOW_MUL = 0.94
 SHORT_HOLD = 9
-CRUMBLE_TIME = 66
+CRUMBLE_TIME = 120
 
-SCROLL0 = 1.88               # RUN + 0.06
-SCROLL_MAX = 1.96            # RUN + 0.14
-SCROLL_ACC = 0.00012
+# A normal sprint still loses a little ground, so the right edge stays out of
+# reach. The start is gentler than 0.2 and the camera only hurries later.
+SCROLL0 = 1.85               # RUN + 0.03. Gentler than the 0.2 start of 1.88.
+SCROLL_MAX = 1.91            # RUN + 0.09
+SCROLL_ACC = 0.000008
 
 CH_W = 208
 EY = 136
@@ -35,7 +37,7 @@ BUMP_VX = 1.45
 MAGNET_R = 56
 MAGNET_PULL = 3.1
 
-FINISH_X = 5200
+FINISH_X = 8600
 ROUNDS = 3
 GHOST_FRAMES = 270
 INV_HAZARD = 28
@@ -50,7 +52,7 @@ DUR = {
     "speed": 300,
     "shield": 420,
     "magnet": 360,
-    "slow": 180,
+    "slow": 90,
     "glide": 300,
 }
 POWER_KINDS = ("double", "speed", "shield", "magnet", "slow", "glide")

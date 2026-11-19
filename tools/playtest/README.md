@@ -12,7 +12,7 @@ From the repository root:
 python3 tools/playtest/run.py kultakiri --players 4 --rounds 1 --seed 1
 ```
 
-`--players` is 2–4. `--rounds` is how many rounds to play before stopping on the scoreboard. `--seed` fixes the bot mistakes and the level shuffle. `--max-seconds` stops early; leave it at 0 for a full round.
+`--players` is how many human-like bots. `--cpus` fills the rest of the four slots with the game's own CPU opponents, and `--difficulty` is helppo, normaali or vaikea. Together they must be 2–4. `--rounds` is how many rounds to play before stopping on the scoreboard. `--seed` fixes the bot mistakes and the level shuffle. `--max-seconds` stops early; leave it at 0 for a full round. `--no-video` skips ffmpeg and still plays the rounds.
 
 Needs Python 3, pygame, and `ffmpeg` with libx264. The game package is imported from `Kultakiri/` on disk; nothing is installed.
 

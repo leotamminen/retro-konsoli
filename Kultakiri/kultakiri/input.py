@@ -1,11 +1,12 @@
 # One pad, one player. SDL GameController first; raw hid-playstation if it is not mapped.
-# Cross and Circle both jump, Triangle opens the legend, Options starts, Share goes back.
+# Cross and Circle both jump. In the lobby Circle adds a CPU and Square removes one.
+# Triangle opens settings, Options starts, Share goes back.
 # The same layout for every player. Instance id, never a hard-coded joystick 0.
 import pygame
 
 
 def blank():
-    return {"x": 0.0, "y": 0.0, "jump": False, "start": False, "back": False, "alt": False}
+    return {"x": 0.0, "y": 0.0, "jump": False, "circle": False, "start": False, "back": False, "alt": False, "menu": False}
 
 
 class Pad:
@@ -43,10 +44,12 @@ class Pad:
                 up = ks[pygame.K_UP] or ks[pygame.K_w]
                 c["x"] = float(bool(right)) - float(bool(left))
                 c["y"] = float(bool(down)) - float(bool(up))
-                c["jump"] = bool(ks[pygame.K_x] or ks[pygame.K_z] or ks[pygame.K_SPACE])
+                c["circle"] = bool(ks[pygame.K_z])
+                c["jump"] = bool(ks[pygame.K_x] or ks[pygame.K_SPACE] or ks[pygame.K_z])
                 c["start"] = bool(ks[pygame.K_RETURN] or ks[pygame.K_KP_ENTER])
                 c["back"] = bool(ks[pygame.K_BACKSPACE] or ks[pygame.K_TAB])
                 c["alt"] = bool(ks[pygame.K_c])
+                c["menu"] = bool(ks[pygame.K_v])
             elif self.kind == "gc":
                 g = self.dev
                 ax = g.get_axis(pygame.CONTROLLER_AXIS_LEFTX) / 32768.0
@@ -60,10 +63,12 @@ class Pad:
                 if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_DOWN):
                     ay = 1.0
                 c["x"], c["y"] = ax, ay
+                c["circle"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_B))
                 c["jump"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_A) or g.get_button(pygame.CONTROLLER_BUTTON_B))
                 c["start"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_START))
                 c["back"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_BACK))
                 c["alt"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_Y))
+                c["menu"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_X))
             elif self.kind == "js":
                 j = self.dev
                 ax = j.get_axis(0) if j.get_numaxes() > 0 else 0.0
@@ -80,7 +85,9 @@ class Pad:
                 def b(i):
                     return nb > i and bool(j.get_button(i))
 
+                c["circle"] = b(Pad.RAW_CIRCLE)
                 c["jump"] = b(Pad.RAW_JUMP) or b(Pad.RAW_CIRCLE)
+                c["menu"] = b(2)
                 c["alt"] = b(Pad.RAW_TRIANGLE)
                 c["back"] = b(Pad.RAW_SHARE)
                 c["start"] = b(Pad.RAW_OPTIONS)

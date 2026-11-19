@@ -344,22 +344,23 @@ def bind_font(font):
 
 def _hud(g):
     c = g.canvas
-    bar = pygame.Surface((W, 15), pygame.SRCALPHA)
+    bar = pygame.Surface((W, 16), pygame.SRCALPHA)
     bar.fill((28, 18, 32, 170))
     c.blit(bar, (0, 0))
     font = _font(c)
-    blit(c, font, tr("round", g.round_no, 3) if g.round_no else "", 3, 3, (255, 236, 210), 1, shadow=False)
+    rounds = getattr(g, "match_rounds", 3)
+    blit(c, font, tr("round", g.round_no, rounds) if g.round_no else "", 3, 1, (255, 236, 210), 1, shadow=False)
     meters = "%d%s" % (int(g.camera) // 16, tr("meters"))
     mw, _ = font.size(meters, 1)
-    blit(c, font, meters, W - mw - 3, 3, (255, 236, 210), 1, shadow=False)
+    blit(c, font, meters, W - mw - 3, 1, (255, 236, 210), 1, shadow=False)
     n = max(1, len(g.players))
     slot = min(70, (W - 78) // n)
     for i, pl in enumerate(g.players):
         x = 52 + i * slot
         col = PCOLORS[pl.idx][0] if pl.state != "out" else (90, 80, 80)
-        pygame.draw.rect(c, col, (x, 3, 7, 7))
+        pygame.draw.rect(c, col, (x, 4, 7, 7))
         label = tr("out") if pl.state == "out" else str(pl.coins)
-        blit(c, font, label, x + 9, 3, (255, 248, 230), 1, shadow=False)
+        blit(c, font, label, x + 9, 2, (255, 248, 230), 1, shadow=False)
         kind = pl.main_power()
         if kind and pl.state == "run":
             draw_power_icon(c, kind, x + 28, 7, small=True)
@@ -373,31 +374,34 @@ def draw_lobby(g):
     pygame.draw.rect(c, GRASS, (0, 116, W, 6))
     font = _font(c)
     bob = int(math.sin(g.t * 0.08) * 2)
-    blit(c, font, tr("title"), W // 2, 16 + bob, (120, 50, 40), 2, center=True)
+    blit(c, font, tr("title"), W // 2, 22 + bob, (120, 50, 40), 2, center=True)
     ver = "V" + g.version
     vw, _ = font.size(ver, 1)
-    blit(c, font, ver, W - vw - 4, 3, (150, 90, 70), 1, shadow=False)
+    blit(c, font, ver, W - vw - 4, 1, (150, 90, 70), 1, shadow=False)
     blit(c, font, tr("tag"), W // 2, 40, (110, 60, 50), 1, center=True)
     for i in range(4):
         x = 8 + i * 78
-        box = pygame.Rect(x, 52, 74, 78)
+        box = pygame.Rect(x, 52, 74, 70)
         pygame.draw.rect(c, (255, 244, 230), box)
         pygame.draw.rect(c, PCOLORS[i][1], box, 2)
         if i < len(g.players):
             pl = g.players[i]
             pl.body.x = x + 30
-            pl.body.y = 78 + int(abs(math.sin(g.t * 0.12 + i)) * -4)
+            pl.body.y = 72 + int(abs(math.sin(g.t * 0.12 + i)) * -4)
             pl.face = 1
             pl.anim = g.t * 0.4
             draw_player(c, pl, 0, g.t)
-            blit(c, font, pname(i), x + 37, 116, PCOLORS[i][0], 1, center=True)
+            blit(c, font, pname(i), x + 37, 104, PCOLORS[i][0], 1, center=True)
+            if getattr(pl, "is_cpu", False):
+                blit(c, font, tr("cpu_tag"), x + 37, 54, (90, 60, 50), 1, center=True)
         else:
             if (g.t // 25) % 2 == 0:
-                blit(c, font, tr("press"), x + 37, 78, (140, 100, 90), 1, center=True)
-            blit(c, font, tr("join"), x + 37, 92, (120, 90, 80), 1, center=True)
-    hint = tr("start_hint") + "   " + tr("legend_btn") if len(g.players) >= 2 else tr("need")
-    blit(c, font, hint, W // 2, 146, (90, 50, 40), 1, center=True)
-    blit(c, font, tr("leave_hint") + "   " + tr("quit_hint"), W // 2, 162, (120, 80, 70), 1, center=True)
+                blit(c, font, tr("press"), x + 37, 74, (140, 100, 90), 1, center=True)
+            blit(c, font, tr("join"), x + 37, 88, (120, 90, 80), 1, center=True)
+    hint = tr("start_hint") if len(g.players) >= 2 else tr("need")
+    blit(c, font, hint, W // 2, 128, (90, 50, 40), 1, center=True)
+    blit(c, font, tr("cpu_add") + "   " + tr("cpu_del"), W // 2, 144, (90, 50, 40), 1, center=True)
+    blit(c, font, tr("legend_btn") + "   " + tr("leave_hint"), W // 2, 160, (120, 80, 70), 1, center=True)
 
 
 def draw_legend(g):
@@ -519,6 +523,78 @@ def draw_quit(g):
     blit(c, _font(c), tr("quitting"), W // 2, 5, (80, 30, 30), 1, center=True)
 
 
+def _settings_line(g, key):
+    st = g.settings
+    if key == "cpu":
+        return tr("opt_cpu"), str(g._cpu_count())
+    if key == "diff":
+        return tr("opt_diff"), tr("diff_" + st["cpu_diff"])
+    if key == "rounds":
+        return tr("opt_rounds"), str(st["rounds"])
+    if key == "scroll":
+        return tr("opt_scroll"), "%.2f" % st["scroll0"]
+    if key == "ramp":
+        return tr("opt_ramp"), tr("ramp_" + st["ramp"])
+    if key == "freq":
+        return tr("opt_freq"), tr("freq_" + st["power_freq"])
+    if key == "sfx":
+        return tr("opt_sfx"), str(st["sfx_vol"])
+    if key == "music":
+        return tr("opt_music"), str(st["music_vol"])
+    if key == "full":
+        return tr("opt_full"), tr("on") if st["fullscreen"] else tr("off")
+    if key == "powers":
+        return tr("opt_powers"), ""
+    if key == "legend":
+        return tr("opt_legend"), ""
+    return tr("opt_back"), ""
+
+
+def draw_settings(g):
+    c = g.canvas
+    c.blit(g.sky, (0, 0))
+    veil = pygame.Surface((W, H), pygame.SRCALPHA)
+    veil.fill((255, 244, 230, 230))
+    c.blit(veil, (0, 0))
+    font = _font(c)
+    blit(c, font, tr("settings"), W // 2, 4, (120, 50, 40), 1, center=True)
+    rows = g._settings_rows()
+    window = 9
+    start = max(0, min(g.menu_i - 4, len(rows) - window))
+    for i, key in enumerate(rows[start:start + window]):
+        y = 20 + i * 16
+        if key == rows[g.menu_i]:
+            pygame.draw.rect(c, (255, 210, 140), (8, y - 2, W - 16, 15))
+        label, value = _settings_line(g, key)
+        blit(c, font, label, 14, y, (80, 40, 36), 1, shadow=False)
+        if value:
+            vw, _ = font.size(value, 1)
+            blit(c, font, value, W - 14 - vw, y, (120, 60, 40), 1, shadow=False)
+
+
+def draw_powers(g):
+    from .const import POWER_KINDS
+    c = g.canvas
+    c.blit(g.sky, (0, 0))
+    veil = pygame.Surface((W, H), pygame.SRCALPHA)
+    veil.fill((255, 244, 230, 230))
+    c.blit(veil, (0, 0))
+    font = _font(c)
+    blit(c, font, tr("opt_powers"), W // 2, 6, (120, 50, 40), 1, center=True)
+    rows = list(POWER_KINDS) + ["back"]
+    for i, key in enumerate(rows):
+        y = 24 + i * 18
+        if i == g.menu_i:
+            pygame.draw.rect(c, (255, 210, 140), (8, y - 2, W - 16, 16))
+        if key == "back":
+            blit(c, font, tr("opt_back"), 16, y, (80, 40, 36), 1, shadow=False)
+            continue
+        blit(c, font, tr("p_" + key), 16, y, POWER_COLORS[key], 1, shadow=False)
+        flag = tr("on") if g.settings["powers"].get(key, True) else tr("off")
+        fw, _ = font.size(flag, 1)
+        blit(c, font, flag, W - 14 - fw, y, (80, 40, 36), 1, shadow=False)
+
+
 def draw_frame(g):
     if g.font is not None:
         bind_font(g.font)
@@ -527,6 +603,10 @@ def draw_frame(g):
         draw_lobby(g)
     elif st == "legend":
         draw_legend(g)
+    elif st == "settings":
+        draw_settings(g)
+    elif st == "powers":
+        draw_powers(g)
     elif st == "results":
         draw_results(g)
     else:

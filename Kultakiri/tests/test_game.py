@@ -68,7 +68,7 @@ class Tests(unittest.TestCase):
         with open(os.path.join(root, "version.json"), encoding="utf-8") as fh:
             version = json.loads(fh.read())["version"]
         self.assertEqual(version, load_version())
-        self.assertEqual(version, "0.2")
+        self.assertEqual(version, "0.3")
         for dirpath, _dirs, files in os.walk(os.path.join(root, "kultakiri")):
             for name in files:
                 if not name.endswith(".py"):
@@ -151,10 +151,33 @@ class Tests(unittest.TestCase):
 
     def test_scroll_is_faster_than_a_normal_run(self):
         from kultakiri.const import MAX_RISE, RUN, SCROLL0, SCROLL_MAX, SPEED_RUN, TILE
-        self.assertGreaterEqual(SCROLL0, RUN + 0.05)
+        self.assertGreater(SCROLL0, RUN)
+        self.assertGreater(SCROLL_MAX, RUN)
         self.assertGreaterEqual(SCROLL_MAX, SCROLL0)
-        self.assertGreater(SPEED_RUN, SCROLL_MAX + 0.3)
+        self.assertGreater(SPEED_RUN, SCROLL_MAX)
         self.assertEqual(MAX_RISE, TILE * 2)
+
+    def test_settings_survive_a_missing_or_broken_file(self):
+        import tempfile
+        from kultakiri.settings import load_settings, save_settings
+        missing = load_settings(os.path.join(tempfile.gettempdir(), "no-such-kultakiri.json"))
+        self.assertEqual(missing["cpu_diff"], "normaali")
+        self.assertGreater(missing["scroll0"], 1.8)
+        broken = os.path.join(tempfile.gettempdir(), "kultakiri-broken.json")
+        with open(broken, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        self.assertEqual(load_settings(broken)["rounds"], 3)
+        nasty = os.path.join(tempfile.gettempdir(), "kultakiri-nasty.json")
+        with open(nasty, "w", encoding="utf-8") as fh:
+            fh.write('{"cpu_players": 9, "cpu_diff": "mahdoton", "scroll0": 0.2, "rounds": "x"}')
+        safe = load_settings(nasty)
+        self.assertLessEqual(safe["cpu_players"], 3)
+        self.assertEqual(safe["cpu_diff"], "normaali")
+        self.assertGreater(safe["scroll0"], 1.8)
+        self.assertEqual(safe["rounds"], 3)
+        path = os.path.join(tempfile.gettempdir(), "kultakiri-ok.json")
+        self.assertTrue(save_settings(safe, path))
+        self.assertEqual(load_settings(path)["sfx_vol"], safe["sfx_vol"])
 
     def test_opening_and_no_double_hard(self):
         from kultakiri.const import SCROLL_MAX
@@ -279,7 +302,7 @@ class Tests(unittest.TestCase):
         player.body.y = 400
         self.assertEqual(start_ghost(player, 0), "ghost")
         self.assertEqual(player.rescues, 0)
-        solids = [(30, EY, 80)]
+        solids = [(40, EY, 220)]
         revived = False
         for _ in range(90):
             # Steer down onto the ledge under the ghost.

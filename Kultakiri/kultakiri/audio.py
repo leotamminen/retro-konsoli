@@ -7,6 +7,18 @@ import pygame
 
 _SFX = {}
 _READY = False
+_MUSIC = None
+_VOL = {"sfx": 0.8, "music": 0.45}
+
+
+def set_volumes(sfx_vol, music_vol):
+    _VOL["sfx"] = max(0.0, min(1.0, float(sfx_vol) / 10.0))
+    _VOL["music"] = max(0.0, min(1.0, float(music_vol) / 10.0))
+    if _MUSIC is not None:
+        try:
+            _MUSIC.set_volume(_VOL["music"])
+        except Exception:
+            pass
 
 
 def _tone(freq, dur, vol=0.25, wave="sq", slide=0.0):
@@ -63,7 +75,10 @@ def start_audio():
         _SFX["go"] = pygame.mixer.Sound(buffer=_tone(440, 0.12, 0.2, "sq", 0.2).tobytes())
         _SFX["win"] = pygame.mixer.Sound(buffer=_tone(523, 0.28, 0.2, "tri", 0.15).tobytes())
         if not os.environ.get("KULTAKIRI_NO_MUSIC"):
-            pygame.mixer.Sound(buffer=_music().tobytes()).play(loops=-1)
+            global _MUSIC
+            _MUSIC = pygame.mixer.Sound(buffer=_music().tobytes())
+            _MUSIC.set_volume(_VOL["music"])
+            _MUSIC.play(loops=-1)
         _READY = True
     except Exception:
         _READY = False
@@ -96,6 +111,7 @@ def sfx(name):
     sound = _SFX.get(name)
     if sound is not None:
         try:
+            sound.set_volume(_VOL["sfx"])
             sound.play()
         except Exception:
             pass

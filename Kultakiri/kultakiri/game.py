@@ -11,12 +11,14 @@ from .actors import (
     Player, award, clamp_runner, collect, fate, pull_coins,
     separate_bumps, start_ghost, tick_ghost, tick_pickups, tick_runner, touch_hazard,
 )
-from .audio import sfx
-from .const import EY, PH, ROUNDS, SCROLL0, SCROLL_ACC, SCROLL_MAX, W
+from .audio import set_volumes, sfx
+from .const import EY, PH, SCROLL0, SCROLL_MAX, W
+from .cpu import CpuBrain
 from .draw import draw_frame, make_sky
 from .font import Font
 from .input import Pad, ScriptPad, blank
 from .physics import Pilot, ghost_steer
+from .settings import DIFFS, FREQS, RAMPS, SCROLL_STEPS, load_settings, save_settings
 from .version import load_version
 from .world import World, chunk_count
 
@@ -37,8 +39,15 @@ class Game:
         self.legend_from = "lobby"
         self.t = 0
         self.camera = 0.0
-        self.scroll = SCROLL0
+        self.settings = load_settings()
+        set_volumes(self.settings["sfx_vol"], self.settings["music_vol"])
+        self.scroll = self.settings["scroll0"]
+        self.scroll_acc = RAMPS[self.settings["ramp"]]
+        self.scroll_max = max(SCROLL_MAX, self.scroll + 0.04)
+        self.match_rounds = self.settings["rounds"]
         self.round_no = 0
+        self.settings_from = "lobby"
+        self.reopen_screen = False
         self.round_winners = []
         self.ending = 0
         self.go_flash = 0
@@ -49,6 +58,8 @@ class Game:
         self.seed = 1
         self.rng = random.Random(1)
         self.bits = []
+        for _ in range(self.settings["cpu_players"]):
+            self.add_cpu(save=False)
         self.stats = {
             "frames": 0, "chunk_fail": 0, "chunk_types": 0, "validated": 0,
             "double_air": 0, "speed_fast": 0, "shield_on": 0, "shield_block": 0,
@@ -84,8 +95,46 @@ class Game:
             return None
         player = Player(len(self.players), pad)
         player.pilot = Pilot(getattr(pad, "skill", 1.0), random.Random(self.seed + 40 + len(self.players)))
+        player.is_cpu = False
         self.players.append(player)
         return player
+
+    def add_cpu(self, save=True):
+        if len(self.players) >= 4:
+            return None
+        pad = ScriptPad("cpu%d" % (len(self.players) + 1))
+        pad.auto = False
+        self.pads[pad.id] = pad
+        player = self.add_player(pad)
+        if player is None:
+            return None
+        player.is_cpu = True
+        player.brain = CpuBrain(self.settings["cpu_diff"], random.Random(self.seed + 90 + player.idx))
+        self.settings["cpu_players"] = self._cpu_count()
+        if save:
+            save_settings(self.settings)
+        return player
+
+    def remove_cpu(self, save=True):
+        for player in reversed(self.players):
+            if not getattr(player, "is_cpu", False):
+                continue
+            self.players.remove(player)
+            self.pads.pop(player.pad.id, None)
+            self.reindex()
+            self.settings["cpu_players"] = self._cpu_count()
+            if save:
+                save_settings(self.settings)
+            return player
+        return None
+
+    def _cpu_count(self):
+        return sum(1 for player in self.players if getattr(player, "is_cpu", False))
+
+    def _retune_cpus(self):
+        for player in self.players:
+            if getattr(player, "is_cpu", False):
+                player.brain = CpuBrain(self.settings["cpu_diff"], random.Random(self.seed + 90 + player.idx))
 
     def reindex(self):
         for i, player in enumerate(self.players):
@@ -183,7 +232,7 @@ class Game:
     def drive(self):
         for player in self.players:
             self._drive_player(player)
-        if self.state != "lobby":
+        if self.state != "lobby" or not self.autoplay:
             return
         for pad in self.pads.values():
             if not pad.script or self.owner(pad) is not None:
@@ -250,9 +299,20 @@ class Game:
                 kept.append(bit)
         self.bits = kept
 
+    def think_cpus(self):
+        if self.state not in ("ready", "play") or self.world is None:
+            return
+        for player in self.players:
+            if not getattr(player, "is_cpu", False):
+                continue
+            solids = self._solids(player.body.x - 50, player.body.x + 170)
+            hazards = self._hazards(player.body.x - 16, player.body.x + 120)
+            player.pad.desired = player.brain.decide(player, solids, hazards, self.world.powers, self.players)
+
     def update(self):
         self.poll_events()
         self.drive()
+        self.think_cpus()
         self.poll_pads()
         self.t += 1
         self.stats["frames"] += 1
@@ -265,27 +325,138 @@ class Game:
 
     def up_lobby(self):
         for pad in list(self.pads.values()):
+            if getattr(pad, "script", False) and not pad.auto and self.owner(pad) is not None:
+                if getattr(self.owner(pad), "is_cpu", False):
+                    continue
             if pad.pressed("alt"):
-                self.legend_from = "lobby"
-                self.goto("legend")
+                self.settings_from = "lobby"
+                self.menu_i = 0
+                self.goto("settings")
                 return
             owned = self.owner(pad)
-            if owned is not None and pad.pressed("back"):
+            if owned is not None and not getattr(owned, "is_cpu", False) and pad.pressed("back"):
                 self.players.remove(owned)
                 self.reindex()
                 continue
-            if owned is None and pad.pressed("jump"):
+            if pad.pressed("circle"):
+                self.add_cpu()
+                continue
+            if pad.pressed("menu"):
+                self.remove_cpu()
+                continue
+            if owned is None and pad.pressed("jump") and not pad.pressed("circle"):
                 self.add_player(pad)
         if len(self.players) >= 2 and any(
-            self.owner(pad) is not None and pad.pressed("start") for pad in self.pads.values()
+            pad.pressed("start") and not getattr(self.owner(pad), "is_cpu", False)
+            for pad in self.pads.values()
         ):
             self.begin_round()
 
     def up_legend(self):
         for pad in self.pads.values():
+            if getattr(self.owner(pad), "is_cpu", False):
+                continue
             if pad.pressed("jump") or pad.pressed("back") or pad.pressed("alt") or pad.pressed("start"):
                 self.goto(self.legend_from)
                 return
+
+    def _settings_rows(self):
+        return ("cpu", "diff", "rounds", "scroll", "ramp", "freq", "sfx", "music", "full", "powers", "legend", "back")
+
+    def up_settings(self):
+        rows = self._settings_rows()
+        n = len(rows)
+        for pad in self.pads.values():
+            owner = self.owner(pad)
+            if owner is not None and getattr(owner, "is_cpu", False):
+                continue
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % n
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] >= -0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % n
+            left = pad.cur["x"] < -0.5 and pad.prev["x"] >= -0.5
+            right = pad.cur["x"] > 0.5 and pad.prev["x"] <= 0.5
+            pick = pad.pressed("jump") or pad.pressed("start")
+            if pad.pressed("back") or pad.pressed("alt"):
+                self.goto(self.settings_from)
+                return
+            key = rows[self.menu_i]
+            if key == "back" and pick:
+                self.goto(self.settings_from)
+                return
+            if key == "legend" and pick:
+                self.legend_from = "settings"
+                self.goto("legend")
+                return
+            if key == "powers" and pick:
+                self.menu_i = 0
+                self.goto("powers")
+                return
+            if left or right:
+                self._tweak(key, 1 if right else -1)
+
+    def up_powers(self):
+        from .const import POWER_KINDS
+        n = len(POWER_KINDS) + 1
+        for pad in self.pads.values():
+            owner = self.owner(pad)
+            if owner is not None and getattr(owner, "is_cpu", False):
+                continue
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % n
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] >= -0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % n
+            if pad.pressed("back") or (self.menu_i == n - 1 and (pad.pressed("jump") or pad.pressed("start"))):
+                self.menu_i = 0
+                self.goto("settings")
+                return
+            if pad.pressed("jump") or pad.pressed("start") or pad.pressed("menu"):
+                if self.menu_i < len(POWER_KINDS):
+                    kind = POWER_KINDS[self.menu_i]
+                    self.settings["powers"][kind] = not self.settings["powers"].get(kind, True)
+                    save_settings(self.settings)
+
+    def _tweak(self, key, direction):
+        st = self.settings
+        if key == "cpu":
+            want = max(0, min(3, self._cpu_count() + direction))
+            while self._cpu_count() < want:
+                self.add_cpu(save=False)
+            while self._cpu_count() > want:
+                self.remove_cpu(save=False)
+            st["cpu_players"] = self._cpu_count()
+        elif key == "diff":
+            i = DIFFS.index(st["cpu_diff"]) if st["cpu_diff"] in DIFFS else 1
+            st["cpu_diff"] = DIFFS[(i + direction) % len(DIFFS)]
+            self._retune_cpus()
+        elif key == "rounds":
+            st["rounds"] = max(1, min(7, st["rounds"] + direction))
+            self.match_rounds = st["rounds"]
+        elif key == "scroll":
+            steps = list(SCROLL_STEPS)
+            cur = min(steps, key=lambda v: abs(v - st["scroll0"]))
+            i = steps.index(cur)
+            st["scroll0"] = steps[max(0, min(len(steps) - 1, i + direction))]
+        elif key == "ramp":
+            names = list(RAMPS)
+            i = names.index(st["ramp"]) if st["ramp"] in names else 1
+            st["ramp"] = names[(i + direction) % len(names)]
+        elif key == "freq":
+            names = list(FREQS)
+            i = names.index(st["power_freq"]) if st["power_freq"] in names else 1
+            st["power_freq"] = names[(i + direction) % len(names)]
+        elif key == "sfx":
+            st["sfx_vol"] = max(0, min(10, st["sfx_vol"] + direction))
+            set_volumes(st["sfx_vol"], st["music_vol"])
+        elif key == "music":
+            st["music_vol"] = max(0, min(10, st["music_vol"] + direction))
+            set_volumes(st["sfx_vol"], st["music_vol"])
+        elif key == "full":
+            st["fullscreen"] = not st["fullscreen"]
+            self.reopen_screen = True
+        else:
+            return
+        save_settings(st)
 
     def up_ready(self):
         # Countdown is a hard lock: no input, no scroll, nobody creeps forward.
@@ -303,7 +474,7 @@ class Game:
             self.goto("paused")
             return
         if not self.ending:
-            self.scroll = min(SCROLL_MAX, self.scroll + SCROLL_ACC)
+            self.scroll = min(self.scroll_max, self.scroll + self.scroll_acc)
             self.camera += self.scroll
             self.world.ensure(self.camera, self.scroll)
             self.world.advance()
@@ -336,7 +507,7 @@ class Game:
 
     def up_roundend(self):
         if self.t > 20 and any(p.pad.pressed("jump") or p.pad.pressed("start") for p in self.players):
-            if self.round_no >= ROUNDS:
+            if self.round_no >= self.match_rounds:
                 self.goto("results")
             else:
                 self.begin_round()
@@ -384,17 +555,22 @@ class Game:
 
     def begin_round(self):
         self.round_no += 1
-        self.world = World(self.rng)
+        st = self.settings
+        self.match_rounds = st["rounds"]
+        self.scroll_acc = RAMPS[st["ramp"]]
+        freq = FREQS[st["power_freq"]]
+        self.world = World(self.rng, powers_on=st["powers"], power_freq=freq)
         self.stats["validated"] = chunk_count()
         self.stats["chunk_fail"] = 0
         self.camera = 0.0
-        self.scroll = SCROLL0
+        self.scroll = max(SCROLL0, st["scroll0"])
+        self.scroll_max = max(SCROLL_MAX, self.scroll + 0.04)
         self.ending = 0
         self.go_flash = 0
         self.round_winners = []
         for i, player in enumerate(self.players):
             player.reset_round()
-            player.body.x = 128 + i * 16
+            player.body.x = 168 + i * 12
             player.body.y = EY - PH
             player.body.vx = 0.0
             player.body.on_ground = True

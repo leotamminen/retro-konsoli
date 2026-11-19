@@ -31,6 +31,7 @@ class Crumble:
         self.timer = 0
         self.armed = False
         self.live = True
+        self.stood = {}
 
 
 class Mover:
@@ -46,7 +47,7 @@ class World:
     # Teach the new shapes while the scroll is still gentle, each once.
     OPENING = ("pikkukuilu", "portaat", "okapuu", "lasku", "murea", "liuku", "katto", "piikit", "haara")
 
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, powers_on=None, power_freq=1.0):
         self.rng = rng or random.Random()
         validate_all()
         self.placed = []
@@ -56,6 +57,8 @@ class World:
         self.crumbles = []
         self.movers = []
         self.power_i = 0
+        self.powers_on = powers_on
+        self.power_freq = power_freq if power_freq > 0 else 0.0
         self.last_hard = False
         self.last_name = ""
         self.frame = 0
@@ -101,8 +104,11 @@ class World:
         self.last_name = chunk.name
         for x, y in chunk.coins:
             self.coins.append(Coin(origin + x, y))
+        enabled = [k for k in POWER_KINDS if self.powers_on is None or self.powers_on.get(k, True)]
         for x, y in chunk.powers:
-            kind = POWER_KINDS[self.power_i % len(POWER_KINDS)]
+            if not enabled or self.rng.random() > self.power_freq:
+                continue
+            kind = enabled[self.power_i % len(enabled)]
             self.power_i += 1
             self.powers.append(Pickup(kind, origin + x, y, shared=False))
         for x, top, w in chunk.crumbles:
@@ -125,23 +131,30 @@ class World:
             self._place(self._pick(scroll))
 
     def arm_crumbles(self, players):
-        for player in players:
-            body = player.body
-            if player.state != "run" or not body.on_ground:
+        # Each runner gets their own count. The leader crossing must not
+        # drop the bridge under the people still walking up to it.
+        for tile in self.crumbles:
+            if not tile.live:
                 continue
-            fx = body.x + body.w * 0.5
-            fy = body.feet()
-            for tile in self.crumbles:
-                if tile.live and abs(fy - tile.top) <= 3 and tile.x - 2 <= fx <= tile.x + tile.w + 2:
-                    tile.armed = True
+            highest = 0
+            for player in players:
+                body = player.body
+                if player.state != "run" or not body.on_ground:
+                    continue
+                fx = body.x + body.w * 0.5
+                fy = body.feet()
+                if abs(fy - tile.top) <= 3 and tile.x - 2 <= fx <= tile.x + tile.w + 2:
+                    n = tile.stood.get(player.idx, 0) + 1
+                    tile.stood[player.idx] = n
+                    highest = max(highest, n)
+                    if n >= CRUMBLE_TIME:
+                        tile.live = False
+            if highest:
+                tile.armed = True
+                tile.timer = highest
 
     def advance(self):
         self.frame += 1
-        for tile in self.crumbles:
-            if tile.armed and tile.live:
-                tile.timer += 1
-                if tile.timer >= CRUMBLE_TIME:
-                    tile.live = False
 
     def _near(self, x0, x1):
         for origin, chunk in self.placed:

@@ -11,12 +11,14 @@ ORDER = (
     "const.py",
     "font.py",
     "text.py",
+    "settings.py",
     "input.py",
     "physics.py",
     "chunks.py",
     "world.py",
     "actors.py",
     "audio.py",
+    "cpu.py",
     "draw.py",
     "game.py",
     "main.py",
@@ -35,7 +37,13 @@ def strip_local_imports(src):
                 skipping = False
             continue
         stripped = line.strip()
-        if stripped.startswith("from .") or stripped.startswith("from kultakiri"):
+        if (
+            stripped.startswith("from .")
+            or stripped.startswith("from kultakiri")
+            or stripped.startswith("from pixelfont")
+            or stripped.startswith("from common.pixelfont")
+            or stripped.startswith("from common import")
+        ):
             depth = line.count("(") - line.count(")")
             if depth > 0:
                 skipping = True
@@ -57,6 +65,9 @@ def main():
         "    return %r\n" % version,
         "\n",
     ]
+    font_src = (ROOT.parent / "common" / "pixelfont.py").read_text(encoding="utf-8")
+    parts.append("\n# ---- pixelfont.py ----\n")
+    parts.append(font_src if font_src.endswith("\n") else font_src + "\n")
     for name in ORDER:
         src = (ROOT / "kultakiri" / name).read_text(encoding="utf-8")
         parts.append("\n# ---- %s ----\n" % name)
