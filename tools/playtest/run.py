@@ -32,6 +32,9 @@ def main(argv=None):
     os.environ.setdefault("KULTAKIRI_NO_MUSIC", "1")
     os.environ.setdefault("KULTAKIRI_NO_SFX", "1")
     os.environ.setdefault("KULTAKIRI_WINDOWED", "1")
+    os.environ.setdefault("SAUNAKISA_NO_MUSIC", "1")
+    os.environ.setdefault("SAUNAKISA_NO_SFX", "1")
+    os.environ.setdefault("SAUNAKISA_WINDOWED", "1")
     from adapters import get_adapter
     from session import run_session
 

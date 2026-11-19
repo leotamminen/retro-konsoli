@@ -115,7 +115,10 @@ def _report(adapter, players, rounds, seed, video, video_len, events, clips, cra
         "## What the run did",
         "",
     ]
-    for kind in ("fall", "return", "out", "pickup", "effect", "bump", "round_end", "ghost", "anomaly"):
+    for kind in (
+        "fall", "return", "out", "pickup", "effect", "bump", "round_end", "ghost",
+        "faint", "loyly", "avanto", "anomaly",
+    ):
         if counts.get(kind):
             lines.append("- %s: %d" % (kind, counts[kind]))
     if not counts:
@@ -150,12 +153,19 @@ def _report(adapter, players, rounds, seed, video, video_len, events, clips, cra
             extra = adapter.summary() or {}
         except Exception:
             extra = {}
-    if extra:
+    race = ("right_edge_without_speed", "right_edge_samples", "moved_before_go")
+    if any(key in extra for key in race):
         lines.extend(["## Race checks", ""])
         hits = extra.get("right_edge_without_speed", 0)
         seen = extra.get("right_edge_samples", 0)
         lines.append("- Right-edge samples without speed: %d / %d" % (hits, seen))
         lines.append("- Moves during the countdown: %d" % extra.get("moved_before_go", 0))
+        lines.append("")
+    others = [(key, value) for key, value in extra.items() if key not in race]
+    if others:
+        lines.extend(["## Checks", ""])
+        for key, value in others:
+            lines.append("- %s: %s" % (key, value))
         lines.append("")
     lines.extend(["## Notable moments", ""])
     shown = 0

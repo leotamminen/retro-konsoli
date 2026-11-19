@@ -1,8 +1,10 @@
 """Per-game adapters. Each one drives a real game through its normal input path."""
 from .kultakiri import KultakiriAdapter
+from .saunakisa import SaunakisaAdapter
 
 ADAPTERS = {
     "kultakiri": KultakiriAdapter,
+    "saunakisa": SaunakisaAdapter,
 }
 
 
