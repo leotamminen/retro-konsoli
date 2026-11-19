@@ -20,7 +20,7 @@ from saunakisa.const import (
 )
 from saunakisa.font import has_glyph
 from saunakisa.game import Game
-from saunakisa.input import ScriptPad, blank
+from saunakisa.input import Pad, ScriptPad, blank
 from saunakisa.text import FI
 from saunakisa.version import load_version
 from saunakisa.world import Room
@@ -72,7 +72,7 @@ class Tests(unittest.TestCase):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "version.json"), encoding="utf-8") as fh:
             version = json.loads(fh.read())["version"]
-        self.assertEqual(version, "0.2.1")
+        self.assertEqual(version, "0.3")
         self.assertEqual(load_version(), version)
         quoted = '"%s"' % version
         squoted = "'%s'" % version
@@ -288,6 +288,65 @@ class Tests(unittest.TestCase):
         game.update()
         self.assertEqual(game.state, "ready")
 
+    def test_joined_pads_can_fill_every_cpu_slot(self):
+        for n in (1, 2, 3):
+            game = self._fresh()
+            game.state = "lobby"
+            pads = []
+            for i in range(n):
+                pad = Pad("js", _QuietStick(), iid=50 + i)
+                game.pads[pad.id] = pad
+                pads.append(pad)
+            # The keyboard hears the same X as a connected pad on this console.
+            self._tap(game, pygame.event.Event(pygame.KEYDOWN, key=pygame.K_x))
+            for pad in pads:
+                iid = int(pad.id[2:])
+                self._tap(game, pygame.event.Event(pygame.JOYBUTTONDOWN, instance_id=iid, button=0))
+            humans = [p for p in game.players if not p.cpu]
+            self.assertEqual(len(humans), n)
+            self.assertTrue(all(p.pad.kind != "kb" for p in humans))
+            iid = int(pads[0].id[2:])
+            for _ in range(6):
+                if sum(p.cpu for p in game.players) == 4 - n:
+                    break
+                self._tap(game, pygame.event.Event(pygame.JOYBUTTONDOWN, instance_id=iid, button=2))
+            self.assertEqual(len(game.players), 4)
+            self.assertEqual(sum(p.cpu for p in game.players), 4 - n)
+            game.begin_round()
+            for _ in range(3):
+                game.update()
+            self.assertIn(game.state, ("ready", "play"))
+
+    def test_fainted_cpu_moves_in_the_next_rounds(self):
+        game = self._fresh()
+        game.state = "lobby"
+        game.settings["cpus"] = 2
+        game.settings["rounds"] = 3
+        game.sync_cpus()
+        human = ScriptPad("mover")
+        game.pads[human.id] = human
+        game.add_player(human)
+        cpus = [p for p in game.players if p.cpu]
+        self.assertEqual(len(cpus), 2)
+        for _round in range(3):
+            for cpu in cpus:
+                cpu.heat = 100
+                try_faint(cpu)
+                cpu.pad.bot.plan = "cool"
+                cpu.pad.bot.lock = 90
+            game.begin_round()
+            self.assertTrue(all(c.mode == "move" for c in cpus))
+            self.assertTrue(all(c.pad.bot.plan == "bench" and c.pad.bot.lock == 0 for c in cpus))
+            game.state = "play"
+            game.round_left = 240
+            starts = [(c.place, c.x) for c in cpus]
+            for _ in range(150):
+                human.desired = blank()
+                game.update()
+            for cpu, (place, x) in zip(cpus, starts):
+                self.assertEqual(cpu.mode, "move")
+                self.assertTrue(cpu.place != place or abs(cpu.x - x) > 8)
+
     def _fresh(self):
         pygame.event.clear()
         screen = pygame.display.get_surface() or pygame.display.set_mode((320, 180))
@@ -315,7 +374,7 @@ class Tests(unittest.TestCase):
         self._key(game, pygame.K_LEFT)
         self.assertEqual(game.settings["cpus"], 0)
         self._key(game, pygame.K_LEFT)
-        self.assertEqual(game.settings["cpus"], 3)
+        self.assertEqual(game.settings["cpus"], 4)
         self._key(game, pygame.K_RIGHT)
         self.assertEqual(game.settings["cpus"], 0)
 

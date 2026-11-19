@@ -1,0 +1,2713 @@
+#!/usr/bin/env python3
+# SAUNAKISA - rento 2-4 pelaajan saunakisa Batoceralle (pygame 2).
+# Yksi tiedosto, ei assetteja. Kopioi kansioon /userdata/roms/pygame/
+# Versio tulee buildin aikana version.jsonista.
+def load_version():
+    return '0.3'
+
+
+# ---- const.py ----
+# Shared numbers for the sauna. Heat tests and the match loop both use these.
+FPS = 60
+W, H = 320, 180
+PW, PH = 12, 16
+
+ROUNDS = 3
+COUNTDOWN = 180
+ROUND_FRAMES = 78 * FPS
+MIN_FRAMES = 48 * FPS
+LAST_BONUS = 55
+SOLO_HOLD = 100
+
+HEAT_MAX = 100.0
+START_HEAT = 10.0
+START_ROOM = 22.0
+ROOM_RISE = 0.50
+ROOM_MULT0 = 0.66
+ROOM_MULT1 = 1.08
+FAINT_KEEP = 0.70
+
+# Heat per second. Positive cooks, negative cools. Room heat scales only the cook.
+HEAT_RATE = {
+    "high": 1.42,
+    "mid": 0.78,
+    "low": 0.40,
+    "floor": 0.16,
+    "porch": -8.0,
+    "avanto": -26.0,
+}
+# Points per second. The floor is a corridor, the top bench is the prize.
+POINT_RATE = {
+    "high": 5.3,
+    "mid": 3.6,
+    "low": 2.0,
+    "floor": 0.35,
+    "porch": 0.0,
+    "avanto": 0.0,
+}
+
+WALK = 1.72
+ACCEL = 1.05
+CLIMB_SPEED = 2.35
+BODY = 14
+
+LOYLY_CD = int(4.4 * FPS)
+LOYLY_ROOM = 9.0
+LOYLY_OTHER = 8.0
+LOYLY_SELF = 5.0
+STOVE_X = 276
+
+OLUT_COOL = 30.0
+TOWEL_COOL = 14.0
+TOWEL_TIME = 4 * FPS
+BEER_TIME = 5 * FPS
+BEER_MUL = 1.8
+BEER_CAP = 3
+ITEM_FIRST = 5 * FPS
+ITEM_EVERY = 8 * FPS
+OLUT_CHANCE = 0.78
+DOOR_OPEN = 9 * FPS
+DOOR_ZONE_X = 176
+DOOR_POINT = 0.35
+KIUAS_POINT = 0.55
+KIUAS_COOL = 0.5
+RELIGHT_HOLD = int(0.6 * FPS)
+
+EVENT_MIN = int(5.5 * FPS)
+EVENT_MAX = 9 * FPS
+GUST_ROOM = 15.0
+GUST_BODY = 7.0
+FLARE_ROOM = 13.0
+FLARE_BODY = 7.0
+DOOR_DRAFT = 4.0
+
+# x0, x1, feet y. climb_x is where up/down changes bench.
+# link_left / link_right are the door and the avanto, taken by walking off the end.
+PLACES = {
+    "avanto": {"x0": 14, "x1": 48, "y": 168, "climb_x": None, "up": None, "down": None, "left": None, "right": "porch"},
+    "porch": {"x0": 6, "x1": 96, "y": 148, "climb_x": None, "up": None, "down": None, "left": "avanto", "right": "floor"},
+    "floor": {"x0": 114, "x1": 308, "y": 156, "climb_x": 252, "up": "low", "down": None, "left": "porch", "right": None},
+    "low": {"x0": 128, "x1": 264, "y": 120, "climb_x": 250, "up": "mid", "down": "floor", "left": None, "right": None},
+    "mid": {"x0": 142, "x1": 254, "y": 86, "climb_x": 242, "up": "high", "down": "low", "left": None, "right": None},
+    "high": {"x0": 156, "x1": 242, "y": 52, "climb_x": 230, "up": None, "down": "mid", "left": None, "right": None},
+}
+INSIDE = ("floor", "low", "mid", "high")
+ORDER = ("avanto", "porch", "floor", "low", "mid", "high")
+
+PCOLORS = (
+    ((232, 72, 64), (92, 24, 28)),
+    ((64, 148, 240), (18, 48, 112)),
+    ((72, 196, 96), (20, 96, 44)),
+    ((244, 196, 48), (148, 96, 16)),
+)
+PNAMES = ("PUNAINEN", "SININEN", "VIHREÄ", "KELTAINEN")
+
+# Centre of a bench, where a bot sits if it is not going anywhere.
+SEAT = {
+    "high": 196,
+    "mid": 190,
+    "low": 186,
+    "floor": 168,
+    "porch": 52,
+    "avanto": 30,
+}
+
+# ---- font.py ----
+# Tuonelan polku's hand-drawn bitmap font, from this same repo (p0_font.py).
+# No third-party license: the glyphs were drawn for these games.
+# Spec per glyph: "accent | body | descender", rows separated by spaces.
+# Tall caps (9px) stay readable on a TV once the 320x180 picture is scaled up.
+import pygame
+
+_GL = {
+ "A": "|.###. #...# #...# ##### #...# #...# #...#|", "B": "|####. #...# #...# ####. #...# #...# ####.|",
+ "C": "|.###. #...# #.... #.... #.... #...# .###.|", "D": "|####. #...# #...# #...# #...# #...# ####.|",
+ "E": "|##### #.... #.... ####. #.... #.... #####|", "F": "|##### #.... #.... ####. #.... #.... #....|",
+ "G": "|.###. #...# #.... #.### #...# #...# .####|", "H": "|#...# #...# #...# ##### #...# #...# #...#|",
+ "I": "|### .#. .#. .#. .#. .#. ###|", "J": "|..### ...#. ...#. ...#. ...#. #..#. .##..|",
+ "K": "|#...# #..#. #.#.. ##... #.#.. #..#. #...#|", "L": "|#.... #.... #.... #.... #.... #.... #####|",
+ "M": "|#...# ##.## #.#.# #.#.# #...# #...# #...#|", "N": "|#...# ##..# ##..# #.#.# #..## #..## #...#|",
+ "O": "|.###. #...# #...# #...# #...# #...# .###.|", "P": "|####. #...# #...# ####. #.... #.... #....|",
+ "Q": "|.###. #...# #...# #...# #.#.# #..#. .##.#|", "R": "|####. #...# #...# ####. #.#.. #..#. #...#|",
+ "S": "|.#### #.... #.... .###. ....# ....# ####.|", "T": "|##### ..#.. ..#.. ..#.. ..#.. ..#.. ..#..|",
+ "U": "|#...# #...# #...# #...# #...# #...# .###.|", "V": "|#...# #...# #...# #...# .#.#. .#.#. ..#..|",
+ "W": "|#...# #...# #...# #.#.# #.#.# ##.## #...#|", "X": "|#...# #...# .#.#. ..#.. .#.#. #...# #...#|",
+ "Y": "|#...# #...# .#.#. ..#.. ..#.. ..#.. ..#..|", "Z": "|##### ....# ...#. ..#.. .#... #.... #####|",
+ "Ä": ".#.#. .....|.###. #...# #...# ##### #...# #...# #...#|", "Ö": ".#.#. .....|.###. #...# #...# #...# #...# #...# .###.|",
+ "Å": "..#.. .#.#.|..#.. .#.#. #...# ##### #...# #...# #...#|", "Ü": ".#.#. .....|#...# #...# #...# #...# #...# #...# .###.|",
+ "É": "...#. ..#..|##### #.... #.... ####. #.... #.... #####|",
+ "a": "|.##. ...# .### #..# .###|", "b": "|#... #... ###. #..# #..# #..# ###.|", "c": "|.### #... #... #... .###|",
+ "d": "|...# ...# .### #..# #..# #..# .###|", "e": "|.##. #..# #### #... .###|", "f": "|.## #.. ### #.. #.. #.. #..|",
+ "g": "|.### #..# #..# #..# .###|...# ###.", "h": "|#... #... ###. #..# #..# #..# #..#|", "i": "|# . # # # # #|",
+ "j": "|.# .. .# .# .# .# .#|.# #.", "k": "|#... #... #..# #.#. ##.. #.#. #..#|", "l": "|#. #. #. #. #. #. .#|",
+ "m": "|####. #.#.# #.#.# #.#.# #.#.#|", "n": "|###. #..# #..# #..# #..#|", "o": "|.##. #..# #..# #..# .##.|",
+ "p": "|###. #..# #..# #..# ###.|#... #...", "q": "|.### #..# #..# #..# .###|...# ...#", "r": "|#.## ##.. #... #... #...|",
+ "s": "|.### #... .##. ...# ###.|", "t": "|.#. .#. ### .#. .#. .#. ..#|", "u": "|#..# #..# #..# #..# .###|",
+ "v": "|#...# #...# #...# .#.#. ..#..|", "w": "|#...# #...# #.#.# #.#.# .#.#.|", "x": "|#...# .#.#. ..#.. .#.#. #...#|",
+ "y": "|#..# #..# #..# #..# .###|...# .##.", "z": "|#### ...# .##. #... ####|",
+ "ä": "|#..# .... .##. ...# .### #..# .###|", "ö": "|#..# .... .##. #..# #..# #..# .##.|",
+ "å": ".##. #..#|.##. .... .##. ...# .### #..# .###|", "ü": "|#..# .... #..# #..# #..# #..# .###|",
+ "é": "|..#. .#.. .##. #..# #### #... .###|",
+ "0": "|.###. #...# #..## #.#.# ##..# #...# .###.|", "1": "|.#. ##. .#. .#. .#. .#. ###|",
+ "2": "|.###. #...# ....# ...#. ..#.. .#... #####|", "3": "|####. ....# ....# .###. ....# ....# ####.|",
+ "4": "|...#. ..##. .#.#. #..#. ##### ...#. ...#.|", "5": "|##### #.... ####. ....# ....# #...# .###.|",
+ "6": "|..##. .#... #.... ####. #...# #...# .###.|", "7": "|##### ....# ...#. ..#.. .#... .#... .#...|",
+ "8": "|.###. #...# #...# .###. #...# #...# .###.|", "9": "|.###. #...# #...# .#### ....# ...#. .##..|",
+ ".": "|. . . . . . #|", ",": "|.. .. .. .. .. .. .#|#.", ":": "|. . . # . . #|", ";": "|.. .. .. .# .. .. .#|#.",
+ "!": "|# # # # # . #|", "?": "|.##. #..# ...# ..#. .#.. .... .#..|", "'": "|# # . . . . .|", '"': "|#.# #.# ... ... ... ... ...|",
+ "-": "|... ... ... ### ... ... ...|", "+": "|... ... .#. ### .#. ... ...|", "=": "|... ... ### ... ### ... ...|",
+ "/": "|..# ..# .#. .#. .#. #.. #..|", "(": "|.# #. #. #. #. #. .#|", ")": "|#. .# .# .# .# .# #.|",
+ "[": "|## #. #. #. #. #. ##|", "]": "|## .# .# .# .# .# ##|", "<": "|... ..# .#. #.. .#. ..# ...|", ">": "|... #.. .#. ..# .#. #.. ...|",
+ "%": "|##..# ##.#. ...#. ..#.. .#... .#.## #..##|", "*": "|... #.# .#. #.# ... ... ...|", "_": "|.... .... .... .... .... .... ####|",
+ "#": "|.#.#. ##### .#.#. .#.#. .#.#. ##### .#.#.|", "&": "|.##.. #..#. .##.. .#... #.#.# #..#. .##.#|",
+ "x": "|#...# .#.#. ..#.. .#.#. #...#|", "\u2013": "|.... .... .... #### .... .... ....|", "\u00b7": "|. . . # . . .|",
+ "|": "|# # # # # # #|#", "\u2026": "|..... ..... ..... ..... ..... ..... #.#.#|",
+}
+
+_LOWER = set("abcdefghijklmnopqrstuvwxyzäöåüé")
+_CAPMAP = [0, 1, 1, 2, 3, 4, 5, 5, 6]
+_LOWMAP = [0, 1, 2, 3, 3, 4, 5, 5, 6]
+
+
+def _parse(spec):
+    acc, body, desc = (spec.split("|") + ["", ""])[:3]
+    acc = [row for row in acc.split() if row]
+    body = [row for row in body.split() if row]
+    desc = [row for row in desc.split() if row]
+    if len(body) == 5:
+        body = ["." * len(body[0])] * 2 + body
+    return acc, body, desc
+
+
+class PixelFont:
+    def __init__(self, tall=False, scale=1, bold=False, space=3):
+        self.tall = tall
+        self.sc = scale
+        self.bold = bold
+        self.space = space
+        self.cap = 9 if tall else 7
+        self.rows = 2 + self.cap + 2
+        self.glyphs = {}
+        for ch, spec in _GL.items():
+            self.glyphs[ch] = self._build(ch, spec)
+        self.cache = {}
+
+    def _build(self, ch, spec):
+        acc, body, desc = _parse(spec)
+        w = max(len(r) for r in acc + body + desc)
+        if self.tall:
+            mp = _LOWMAP if ch in _LOWER else _CAPMAP
+            body = [body[i] for i in mp]
+        rows = ["." * w] * (2 - len(acc)) + acc + body + desc
+        px = [(x, y) for y, r in enumerate(rows) for x, c in enumerate(r) if c == "#"]
+        if self.bold:
+            st = set(px)
+            px = sorted(st | {(x + 1, y) for x, y in st if (x + 2, y) not in st})
+            w += 1
+        return w, px
+
+    def _g(self, ch):
+        g = self.glyphs.get(ch)
+        if g is None:
+            g = self.glyphs.get(ch.upper()) or self.glyphs["?"]
+        return g
+
+    def size(self, text):
+        text = "" if text is None else str(text)
+        w = 0
+        for ch in text:
+            w += self.space if ch == " " else self._g(ch)[0] + 1
+        if text and text[-1] != " ":
+            w -= 1
+        return max(0, w) * self.sc, self.rows * self.sc
+
+    def render(self, text, aa=False, color=(255, 255, 255), bg=None):
+        text = "" if text is None else str(text)
+        key = (text, tuple(color[:3]), self.sc, self.bold, self.tall)
+        hit = self.cache.get(key)
+        if hit is not None:
+            return hit
+        w, h = self.size(text)
+        surf = pygame.Surface((max(1, w), max(1, h)), pygame.SRCALPHA)
+        col = tuple(color[:3])
+        sc = self.sc
+        x = 0
+        for ch in text:
+            if ch == " ":
+                x += self.space
+                continue
+            gw, px = self._g(ch)
+            for gx, gy in px:
+                surf.fill(col, ((x + gx) * sc, gy * sc, sc, sc))
+            x += gw + 1
+        self.cache[key] = surf
+        return surf
+
+
+def has_glyph(ch):
+    return ch == " " or ch in _GL or (ch.upper() in _GL)
+
+
+class Font:
+    """scale 1 is the tall UI face. scale 2 and up is the bold title face."""
+
+    def __init__(self):
+        self.ui = PixelFont(tall=True, scale=1)
+        self.big = PixelFont(tall=True, scale=2, bold=True)
+
+    def _pick(self, scale):
+        return self.big if scale >= 2 else self.ui
+
+    def size(self, text, scale=1):
+        return self._pick(scale).size(text)
+
+    def render(self, text, color, scale=1):
+        return self._pick(scale).render(text, False, color)
+
+
+def blit(surf, font, text, x, y, color, scale=1, center=False, shadow=True):
+    if not text:
+        return
+    img = font.render(text, color, scale)
+    if center:
+        x -= img.get_width() // 2
+        y -= img.get_height() // 2
+    if shadow:
+        sh = font.render(text, (24, 12, 10), scale)
+        surf.blit(sh, (x + scale, y + scale))
+    surf.blit(img, (x, y))
+
+# ---- text.py ----
+# Finnish UI. Every glyph used here exists in font.py.
+
+FI = {
+    "title": "SAUNAKISA",
+    "tag": "KUKA KESTÄÄ LÖYLYN",
+    "press": "PAINA X",
+    "join": "LIITY",
+    "need": "TARVITAAN 2 PELAAJAA",
+    "start_hint": "OPTIONS: ALOITA",
+    "legend_btn": "KOLMIO: ASETUKSET",
+    "cpu_hint": "NELIÖ: CPU",
+    "cpu_tag": "CPU",
+    "settings": "ASETUKSET",
+    "set_cpu": "CPU",
+    "set_diff": "VAIKEUS",
+    "set_rounds": "ERÄT",
+    "set_length": "ERÄN PITUUS",
+    "set_heat": "KUUMUUS",
+    "set_pick": "POIMINNAT",
+    "set_sfx": "ÄÄNET",
+    "set_music": "MUSIIKKI",
+    "set_help": "OHJE",
+    "d_helppo": "HELPPO",
+    "d_normaali": "NORMAALI",
+    "d_vaikea": "VAIKEA",
+    "h_hidas": "HIDAS",
+    "h_normaali": "NORMAALI",
+    "h_nopea": "NOPEA",
+    "p_harvoin": "HARVOIN",
+    "p_normaali": "NORMAALI",
+    "p_usein": "USEIN",
+    "secs": "%dS",
+    "leave_hint": "SHARE: POISTU",
+    "quit_hint": "SHARE+OPTIONS: LOPETA",
+    "round": "ERÄ %d/%d",
+    "go": "NYT!",
+    "fainted": "PYÖRRYI",
+    "loyly": "LÖYLY!",
+    "avanto": "AVANTO",
+    "olut": "OLUT!",
+    "door_msg": "OVI AUKI",
+    "kiuas_msg": "KIUAS SAMMUI",
+    "shut_hint": "X SULKEE",
+    "light_hint": "X SYTYTTÄÄ",
+    "pyyhe": "PYYHE!",
+    "last": "VIIMEINEN",
+    "board": "PISTETAULU",
+    "win": "%s VEI ERÄN",
+    "draw": "TASAPELI",
+    "points": "PST",
+    "total": "YHT",
+    "next": "X: SEURAAVA ERÄ",
+    "results": "TULOKSET",
+    "champ": "%s ON SAUNAKUNINGAS",
+    "rematch": "X: UUSINTA",
+    "back_lobby": "SHARE: AULAAN",
+    "paused": "TAUKO",
+    "resume": "JATKA",
+    "to_lobby": "AULAAN",
+    "quit": "LOPETA",
+    "quitting": "LOPETETAAN",
+    "legend": "OHJE",
+    "back": "X: TAKAISIN",
+    "c_move": "SAUVA LIIKUTTAA",
+    "c_climb": "YLÖS JA ALAS LAUTEILLA",
+    "c_loyly": "X HEITTÄÄ LÖYLYN KIUKAALLA",
+    "c_door": "VASEN OVI VIE VIILENEMÄÄN",
+    "c_avanto": "AVANTO JÄÄHDYTTÄÄ NOPEASTI",
+    "c_item": "OLUT JA PYYHE VIILENTÄVÄT",
+    "c_score": "YLÄLAUDE ANTAA ENITEN",
+    "c_faint": "LIIAN KUUMA NIIN PYÖRRYT",
+    "c_win": "ENITEN PISTEITÄ VOITTAA",
+    "hint_play": "YLÖS LAUTEILLE  X LÖYLY  VASEN ULOS",
+    "room": "LÖYLY",
+}
+
+
+def tr(key, *args):
+    text = FI[key]
+    if args:
+        text = text % args
+    return text
+
+
+def pname(idx):
+    return PNAMES[idx]
+
+
+def label(player):
+    if getattr(player, "cpu", False):
+        return tr("cpu_tag")
+    return pname(player.idx)
+
+# ---- input.py ----
+# One pad, one player. SDL GameController first; raw hid-playstation if it is not mapped.
+# Cross and Circle are the action (join, throw löyly). Square cycles CPU players.
+# Triangle opens settings, Options starts, Share goes back.
+# The same layout for every player. Instance id, never a hard-coded joystick 0.
+# "jump" is the action button. "cpu" is Square.
+import pygame
+
+
+def _safe_button(dev, name):
+    idx = getattr(pygame, name, None)
+    if idx is None or idx < 0:
+        return False
+    try:
+        return bool(dev.get_button(idx))
+    except Exception:
+        return False
+
+
+def blank():
+    return {"x": 0.0, "y": 0.0, "jump": False, "start": False, "back": False, "alt": False, "cpu": False}
+
+
+class Pad:
+    # Linux hid-playstation / DualShock: Cross, Circle, Square, Triangle, L1, R1, L2, R2, Share, Options.
+    RAW_JUMP = 0
+    RAW_CIRCLE = 1
+    RAW_SQUARE = 2
+    RAW_TRIANGLE = 3
+    RAW_SHARE = 8
+    RAW_OPTIONS = 9
+
+    def __init__(self, kind, dev=None, iid=None, joy=None):
+        self.kind = kind
+        self.dev = dev
+        self.joy = joy
+        self.prev = blank()
+        self.cur = blank()
+        self.desired = blank()
+        self.script = kind == "script"
+        self.auto = False
+        self.skill = 1.0
+        if kind == "kb":
+            self.id = "kb"
+        elif iid is not None:
+            self.id = "js%d" % int(iid)
+        else:
+            self.id = "pad%d" % id(self)
+
+    def poll(self, ks):
+        c = blank()
+        try:
+            if self.kind == "kb":
+                right = ks[pygame.K_RIGHT] or ks[pygame.K_d]
+                left = ks[pygame.K_LEFT] or ks[pygame.K_a]
+                down = ks[pygame.K_DOWN] or ks[pygame.K_s]
+                up = ks[pygame.K_UP] or ks[pygame.K_w]
+                c["x"] = float(bool(right)) - float(bool(left))
+                c["y"] = float(bool(down)) - float(bool(up))
+                c["jump"] = bool(ks[pygame.K_x] or ks[pygame.K_z] or ks[pygame.K_SPACE])
+                c["start"] = bool(ks[pygame.K_RETURN] or ks[pygame.K_KP_ENTER])
+                c["back"] = bool(ks[pygame.K_BACKSPACE] or ks[pygame.K_TAB])
+                c["alt"] = bool(ks[pygame.K_c])
+                c["cpu"] = bool(ks[pygame.K_q])
+            elif self.kind == "gc":
+                g = self.dev
+                ax = g.get_axis(pygame.CONTROLLER_AXIS_LEFTX) / 32768.0
+                ay = g.get_axis(pygame.CONTROLLER_AXIS_LEFTY) / 32768.0
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_LEFT"):
+                    ax = -1.0
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_RIGHT"):
+                    ax = 1.0
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_UP"):
+                    ay = -1.0
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_DOWN"):
+                    ay = 1.0
+                c["x"], c["y"] = ax, ay
+                c["jump"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_A) or g.get_button(pygame.CONTROLLER_BUTTON_B))
+                c["start"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_START))
+                c["back"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_BACK))
+                c["alt"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_Y))
+                c["cpu"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_X))
+            elif self.kind == "js":
+                j = self.dev
+                ax = j.get_axis(0) if j.get_numaxes() > 0 else 0.0
+                ay = j.get_axis(1) if j.get_numaxes() > 1 else 0.0
+                if j.get_numhats() > 0:
+                    hx, hy = j.get_hat(0)
+                    if hx:
+                        ax = float(hx)
+                    if hy:
+                        ay = -float(hy)
+                c["x"], c["y"] = ax, ay
+                nb = j.get_numbuttons()
+
+                def b(i):
+                    return nb > i and bool(j.get_button(i))
+
+                c["jump"] = b(Pad.RAW_JUMP) or b(Pad.RAW_CIRCLE)
+                c["cpu"] = b(Pad.RAW_SQUARE)
+                c["alt"] = b(Pad.RAW_TRIANGLE)
+                c["back"] = b(Pad.RAW_SHARE)
+                c["start"] = b(Pad.RAW_OPTIONS)
+            elif self.kind == "script":
+                c.update(self.desired)
+                c["x"] = float(c.get("x", 0.0))
+                c["y"] = float(c.get("y", 0.0))
+        except (pygame.error, SystemError, AttributeError):
+            c = blank()
+        if abs(c["x"]) < 0.28:
+            c["x"] = 0.0
+        if abs(c["y"]) < 0.45:
+            c["y"] = 0.0
+        self.prev = self.cur
+        self.cur = c
+
+    def pressed(self, key):
+        return bool(self.cur.get(key)) and not bool(self.prev.get(key))
+
+    def held(self, key):
+        return bool(self.cur.get(key))
+
+
+class ScriptPad(Pad):
+    def __init__(self, name):
+        Pad.__init__(self, "script", iid=None)
+        self.id = name
+        self.script = True
+
+# ---- settings.py ----
+# Couch settings, written next to the game. A missing or broken file never stops play.
+import json
+import os
+
+DEFAULTS = {
+    "cpus": 0,
+    "difficulty": "normaali",
+    "rounds": 3,
+    "round_secs": 78,
+    "heat": "normaali",
+    "pickups": "normaali",
+    "sfx_vol": 8,
+    "music_vol": 6,
+}
+
+CHOICES = {
+    "cpus": (0, 1, 2, 3),
+    "difficulty": ("helppo", "normaali", "vaikea"),
+    "rounds": (1, 3, 5),
+    "round_secs": (60, 78, 90),
+    "heat": ("hidas", "normaali", "nopea"),
+    "pickups": ("harvoin", "normaali", "usein"),
+    "sfx_vol": tuple(range(11)),
+    "music_vol": tuple(range(11)),
+}
+
+HEAT_MUL = {"hidas": 0.75, "normaali": 1.0, "nopea": 1.25}
+PICKUP_SEC = {"harvoin": 14, "normaali": 8, "usein": 5}
+
+
+def game_dir():
+    here = os.path.dirname(os.path.abspath(__file__))
+    # Package layout keeps the file beside version.json. The bundled
+    # .pygame is one script, so __file__ is already that file's folder.
+    parent = os.path.dirname(here)
+    if os.path.basename(here) == "saunakisa" and os.path.isfile(os.path.join(parent, "version.json")):
+        return parent
+    return here
+
+
+def crash_log_path():
+    override = os.environ.get("SAUNAKISA_CRASH_LOG")
+    if override:
+        return override
+    return os.path.join(game_dir(), "saunakisa_crash.log")
+
+
+def write_crash(text):
+    path = crash_log_path()
+    try:
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            if text and not text.endswith("\n"):
+                fh.write("\n")
+        return path
+    except Exception:
+        return None
+
+
+def settings_path():
+    override = os.environ.get("SAUNAKISA_SETTINGS")
+    if override:
+        return override
+    return os.path.join(game_dir(), "saunakisa_settings.json")
+
+
+def sanitize_settings(data):
+    clean = dict(DEFAULTS)
+    if not isinstance(data, dict):
+        return clean
+    for key, default in DEFAULTS.items():
+        value = data.get(key, default)
+        if key in ("sfx_vol", "music_vol", "cpus", "rounds", "round_secs"):
+            if isinstance(value, bool) or not isinstance(value, int):
+                continue
+            if value in CHOICES[key]:
+                clean[key] = value
+            continue
+        if isinstance(value, str) and value in CHOICES.get(key, ()):
+            clean[key] = value
+    return clean
+
+
+def load_settings(path=None):
+    path = path or settings_path()
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        data = {}
+    return sanitize_settings(data)
+
+
+def save_settings(settings, path=None):
+    path = path or settings_path()
+    clean = sanitize_settings(settings)
+    tmp = path + ".tmp"
+    try:
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(clean, fh, indent=1, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        return False
+
+# ---- audio.py ----
+# Short synthesized blips. Music is built once, never inside the frame.
+import array
+import math
+import os
+
+import pygame
+
+_SFX = {}
+_MUSIC = None
+_READY = False
+_SFX_VOL = 0.8
+_MUSIC_VOL = 0.6
+
+
+def _tone(freq, dur, vol=0.25, wave="sq", slide=0.0):
+    rate = 22050
+    n = max(1, int(rate * dur))
+    buf = array.array("h")
+    ph = 0.0
+    for i in range(n):
+        t = i / n
+        f = freq * (1.0 + slide * t)
+        ph += f / rate
+        if wave == "sq":
+            v = 1.0 if (ph % 1.0) < 0.5 else -1.0
+        elif wave == "tri":
+            v = 4.0 * abs((ph % 1.0) - 0.5) - 1.0
+        else:
+            v = math.sin(ph * 6.283185)
+        env = 1.0 - t
+        sample = int(max(-1.0, min(1.0, v * vol * env)) * 32767)
+        buf.append(sample)
+        buf.append(sample)
+    return buf
+
+
+def _noise(dur, vol=0.12, slide=0.4):
+    rate = 22050
+    n = max(1, int(rate * dur))
+    buf = array.array("h")
+    hold = 0
+    v = 0.0
+    for i in range(n):
+        if hold <= 0:
+            hold = 40 + (i * 17) % 50
+            v = 1.0 if ((i * 13) % 7) < 3 else -1.0
+        hold -= 1
+        t = i / n
+        env = (1.0 - t) * (0.35 + 0.65 * t)
+        sample = int(max(-1.0, min(1.0, v * vol * env)) * 32767)
+        buf.append(sample)
+        buf.append(sample)
+    return buf
+
+
+def _mix(into, buf, at):
+    end = min(len(into), at + len(buf))
+    for i in range(at, end):
+        into[i] = max(-32767, min(32767, into[i] + buf[i - at]))
+
+
+def prepare_audio():
+    if os.environ.get("SAUNAKISA_NO_SFX"):
+        return
+    try:
+        pygame.mixer.pre_init(22050, -16, 2, 512)
+    except Exception:
+        pass
+
+
+def start_audio():
+    global _READY, _MUSIC
+    if os.environ.get("SAUNAKISA_NO_SFX"):
+        return
+    try:
+        if pygame.mixer.get_init() is None:
+            pygame.mixer.init(22050, -16, 2, 512)
+        _SFX["loyly"] = pygame.mixer.Sound(buffer=_noise(0.28, 0.16).tobytes())
+        _SFX["faint"] = pygame.mixer.Sound(buffer=_tone(160, 0.22, 0.22, "sine", -0.55).tobytes())
+        _SFX["dip"] = pygame.mixer.Sound(buffer=_tone(520, 0.1, 0.16, "sine", -0.3).tobytes())
+        _SFX["drink"] = pygame.mixer.Sound(buffer=_tone(740, 0.09, 0.16, "tri", 0.35).tobytes())
+        _SFX["go"] = pygame.mixer.Sound(buffer=_tone(440, 0.12, 0.18, "sq", 0.25).tobytes())
+        _SFX["win"] = pygame.mixer.Sound(buffer=_tone(523, 0.26, 0.18, "tri", 0.12).tobytes())
+        _SFX["join"] = pygame.mixer.Sound(buffer=_tone(620, 0.07, 0.14, "sq", 0.2).tobytes())
+        if not os.environ.get("SAUNAKISA_NO_MUSIC"):
+            _MUSIC = pygame.mixer.Sound(buffer=_music().tobytes())
+            _MUSIC.play(loops=-1)
+        apply_volume(int(_SFX_VOL * 10), int(_MUSIC_VOL * 10))
+        _READY = True
+    except Exception:
+        _READY = False
+
+
+def apply_volume(sfx_vol, music_vol):
+    global _SFX_VOL, _MUSIC_VOL
+    try:
+        sfx_vol = int(sfx_vol)
+        music_vol = int(music_vol)
+    except (TypeError, ValueError):
+        return
+    _SFX_VOL = max(0, min(10, sfx_vol)) / 10.0
+    _MUSIC_VOL = max(0, min(10, music_vol)) / 10.0
+    for sound in _SFX.values():
+        try:
+            sound.set_volume(_SFX_VOL)
+        except Exception:
+            pass
+    if _MUSIC is not None:
+        try:
+            _MUSIC.set_volume(_MUSIC_VOL)
+        except Exception:
+            pass
+
+
+def _music():
+    rate = 22050
+    seconds = 8
+    n = rate * seconds
+    buf = array.array("h", [0]) * (n * 2)
+
+    def midi(m):
+        return 440.0 * (2.0 ** ((m - 69) / 12.0))
+
+    step = int(rate * 0.5)
+    melody = (67, 65, 62, 60, 62, 65, 67, 62, 60, 58, 60, 62, 65, 62, 60, 67)
+    for i, m in enumerate(melody):
+        tone = _tone(midi(m), 0.42, 0.045, "sine", 0.0)
+        _mix(buf, tone, i * step * 2)
+    for i, m in enumerate((48, 48, 46, 43, 41, 43, 46, 48)):
+        tone = _tone(midi(m), 0.7, 0.04, "tri", 0.0)
+        _mix(buf, tone, i * step * 4)
+    return buf
+
+
+def sfx(name):
+    if not _READY or os.environ.get("SAUNAKISA_AUTOPLAY") or _SFX_VOL <= 0:
+        return
+    sound = _SFX.get(name)
+    if sound is not None:
+        try:
+            sound.play()
+        except Exception:
+            pass
+
+# ---- world.py ----
+# The room: löyly in the air, the occasional gust or flare, and one cooling pickup.
+
+
+class Item:
+    def __init__(self, kind, place, x):
+        self.kind = kind
+        self.place = place
+        self.x = x
+
+
+class Room:
+    def __init__(self, rng, pickup_every=None, heat_mul=1.0):
+        self.rng = rng
+        self.heat = START_ROOM
+        self.heat_mul = heat_mul if heat_mul > 0 else 1.0
+        self.pickup_every = pickup_every or ITEM_EVERY
+        self.item = None
+        self.item_in = max(4 * FPS, self.pickup_every // 2)
+        self.event_in = rng.randint(EVENT_MIN, EVENT_MAX)
+        self.fx = None
+        self.fx_t = 0
+        self.loyly_t = 0
+        self.gusts = 0
+        self.flares = 0
+        self.spawns = 0
+        self.age = 0
+        self.door_t = 0
+        self.kiuas_on = True
+        self.announce = None
+        self.doors = 0
+        self.outages = 0
+        self.special = None
+        self.special_at = 0
+        # About one of these a round, never both. Some rounds stay ordinary.
+        if rng.random() < 0.72:
+            self.special = "door" if rng.random() < 0.5 else "kiuas"
+            self.special_at = rng.randint(14 * FPS, 46 * FPS)
+
+    def tick(self, players):
+        """Passive rise, gusts and flares, plus at most one rare event."""
+        self.age += 1
+        names = []
+        if self.special and self.age == self.special_at and self.door_t <= 0 and self.kiuas_on:
+            if self.special == "door":
+                self.door_t = DOOR_OPEN
+                self.doors += 1
+                self.announce = "door_msg"
+            else:
+                self.kiuas_on = False
+                self.outages += 1
+                self.announce = "kiuas_msg"
+            names.append(self.special)
+            self.special = None
+        if self.door_t:
+            self.door_t -= 1
+        if self.kiuas_on:
+            self.heat = min(100.0, self.heat + ROOM_RISE * self.heat_mul / FPS)
+        else:
+            self.heat = max(8.0, self.heat - KIUAS_COOL / FPS)
+        if self.loyly_t:
+            self.loyly_t -= 1
+        if self.fx_t:
+            self.fx_t -= 1
+            if self.fx_t <= 0:
+                self.fx = None
+        if self.item is None:
+            self.item_in -= 1
+            if self.item_in <= 0:
+                self._spawn()
+                names.append("spawn")
+        busy = self.door_t > 0 or not self.kiuas_on
+        self.event_in -= 1
+        if self.event_in <= 0 and not busy:
+            kind = "gust" if self.rng.random() < 0.40 else "flare"
+            self._event(kind, players)
+            names.append(kind)
+            self.event_in = self.rng.randint(EVENT_MIN, EVENT_MAX)
+        elif self.event_in <= 0:
+            self.event_in = self.rng.randint(EVENT_MIN, EVENT_MAX)
+        return names
+
+    def _spawn(self):
+        if self.rng.random() < 0.68:
+            place, x = "porch", self.rng.choice((36, 54, 72))
+        else:
+            place, x = "low", self.rng.choice((160, 188, 214))
+        kind = "olut" if self.rng.random() < OLUT_CHANCE else "pyyhe"
+        self.item = Item(kind, place, x)
+        self.spawns += 1
+
+    def took_item(self):
+        self.item = None
+        self.item_in = self.pickup_every
+
+    def _event(self, kind, players):
+        self.fx = kind
+        self.fx_t = 40
+        if kind == "gust":
+            self.gusts += 1
+            self.heat = max(0.0, self.heat - GUST_ROOM)
+            for player in players:
+                if player.mode == "faint":
+                    continue
+                if player.place in ("floor", "porch", "avanto") and player.x < 190:
+                    player.heat = max(0.0, player.heat - GUST_BODY)
+        else:
+            self.flares += 1
+            self.heat = min(100.0, self.heat + FLARE_ROOM * self.heat_mul)
+            burst = FLARE_BODY * self.heat_mul
+            for player in players:
+                if player.mode == "faint":
+                    continue
+                place = player.place if player.mode != "climb" else player.climb_to
+                if place in INSIDE:
+                    player.heat = min(100.0, player.heat + burst)
+
+    def draft(self):
+        self.heat = max(0.0, self.heat - DOOR_DRAFT)
+
+# ---- actors.py ----
+# Bathers, benches, and the little choices that cook you.
+
+
+def heat_rate(place, room_heat):
+    base = HEAT_RATE[place]
+    if base <= 0.0:
+        return base
+    mult = ROOM_MULT0 + (room_heat / 100.0) * ROOM_MULT1
+    return base * mult
+
+
+def _hotter(a, b, room_heat):
+    if heat_rate(a, room_heat) >= heat_rate(b, room_heat):
+        return a
+    return b
+
+
+class Player:
+    def __init__(self, idx, pad):
+        self.idx = idx
+        self.pad = pad
+        self.cpu = False
+        self.place = "floor"
+        self.x = 150.0
+        self.y = float(PLACES["floor"]["y"])
+        self.vx = 0.0
+        self.mode = "move"
+        self.face = 1
+        self.heat = START_HEAT
+        self.score = 0.0
+        self.bank = 0
+        self.wins = 0
+        self.faints = 0
+        self.round_points = 0
+        self.cool_t = 0
+        self.loyly_cd = 0
+        self.beers = 0
+        self.beer_t = 0
+        self.relight = 0
+        self.climb_to = "floor"
+        self.climb_t = 0
+        self.climb_dur = 1
+        self.climb_y0 = 0.0
+        self.climb_x0 = 0.0
+        self.anim = 0
+        self.got_bonus = False
+
+    def reset_round(self, place, x):
+        self.place = place
+        self.x = float(x)
+        self.y = float(PLACES[place]["y"])
+        self.vx = 0.0
+        self.mode = "move"
+        self.face = 1
+        self.heat = START_HEAT
+        self.score = 0.0
+        self.round_points = 0
+        self.cool_t = 0
+        self.loyly_cd = 0
+        self.beers = 0
+        self.beer_t = 0
+        self.relight = 0
+        self.climb_t = 0
+        self.got_bonus = False
+        self.anim = 0
+        self.mode = "move"
+        bot = getattr(self.pad, "bot", None)
+        if bot is not None:
+            bot.reset()
+
+    @property
+    def inside(self):
+        if self.mode == "faint":
+            return False
+        if self.mode == "climb":
+            return self.place in INSIDE or self.climb_to in INSIDE
+        return self.place in INSIDE
+
+
+def _enter(player, place, x):
+    player.place = place
+    player.x = float(x)
+    player.y = float(PLACES[place]["y"])
+    player.vx = 0.0
+    player.mode = "move"
+
+
+def _start_climb(player, dest):
+    spec = PLACES[dest]
+    player.mode = "climb"
+    player.climb_to = dest
+    player.climb_t = 0
+    player.climb_y0 = player.y
+    player.climb_x0 = player.x
+    dist = abs(spec["y"] - player.y)
+    player.climb_dur = max(8, int(dist / CLIMB_SPEED))
+
+
+def _arrive(player):
+    dest = player.climb_to
+    spec = PLACES[dest]
+    player.mode = "move"
+    player.place = dest
+    player.x = float(spec["climb_x"])
+    player.y = float(spec["y"])
+    player.vx = 0.0
+
+
+def step_player(player, ix, iy, act, room, held=False):
+    """One frame of feet, heat and points. Returns a list of event names."""
+    events = []
+    if player.loyly_cd:
+        player.loyly_cd -= 1
+    if player.cool_t:
+        player.cool_t -= 1
+    if player.beer_t:
+        player.beer_t -= 1
+    if player.mode == "faint":
+        player.anim += 1
+        return events
+
+    if player.mode == "climb":
+        player.climb_t += 1
+        dest = PLACES[player.climb_to]
+        k = min(1.0, player.climb_t / float(player.climb_dur))
+        player.y = player.climb_y0 + (dest["y"] - player.climb_y0) * k
+        player.x = player.climb_x0 + (dest["climb_x"] - player.climb_x0) * k
+        player.face = -1 if dest["climb_x"] < player.climb_x0 else 1
+        if player.climb_t >= player.climb_dur:
+            _arrive(player)
+    else:
+        spec = PLACES[player.place]
+        if ix:
+            player.vx += ix * ACCEL
+            if player.vx > WALK:
+                player.vx = WALK
+            elif player.vx < -WALK:
+                player.vx = -WALK
+            player.face = 1 if ix > 0 else -1
+        else:
+            player.vx *= 0.45
+            if abs(player.vx) < 0.08:
+                player.vx = 0.0
+        player.x += player.vx
+        if player.x < spec["x0"]:
+            player.x = float(spec["x0"])
+            player.vx = 0.0
+        elif player.x > spec["x1"]:
+            player.x = float(spec["x1"])
+            player.vx = 0.0
+        player.y = float(spec["y"])
+
+        moved = False
+        if spec["left"] and player.x <= spec["x0"] + 0.6 and ix < -0.2:
+            land = PLACES[spec["left"]]
+            _enter(player, spec["left"], land["x1"] - 2)
+            moved = True
+            if spec["left"] == "avanto":
+                events.append("avanto")
+            elif player.place == "porch":
+                events.append("exit")
+        elif spec["right"] and player.x >= spec["x1"] - 0.6 and ix > 0.2:
+            land = PLACES[spec["right"]]
+            spot = land["x0"] + 4 if spec["right"] != "avanto" else land["x1"] - 2
+            if spec["right"] == "floor":
+                spot = land["x0"] + 3
+            _enter(player, spec["right"], spot)
+            moved = True
+            if spec["right"] == "avanto":
+                events.append("avanto")
+            elif player.place == "floor":
+                events.append("enter")
+        near_ladder = spec["climb_x"] is not None and abs(player.x - spec["climb_x"]) <= 11
+        if not moved and near_ladder:
+            if iy < -0.5 and spec["up"]:
+                if spec["up"] == "high" and player.beers >= BEER_CAP:
+                    player.relight = 0
+                else:
+                    _start_climb(player, spec["up"])
+            elif iy > 0.5 and spec["down"]:
+                _start_climb(player, spec["down"])
+
+    if player.mode == "move" and player.place == "floor":
+        if room.door_t > 0 and player.x <= PLACES["floor"]["x0"] + 24 and (act or held):
+            room.door_t = 0
+            events.append("shut")
+        elif not room.kiuas_on and player.x >= STOVE_X:
+            if held or act:
+                player.relight += 1
+                if player.relight >= RELIGHT_HOLD:
+                    room.kiuas_on = True
+                    player.relight = 0
+                    events.append("relight")
+            else:
+                player.relight = 0
+        elif act and player.x >= STOVE_X and player.loyly_cd <= 0 and room.kiuas_on:
+            events.append("loyly")
+            player.relight = 0
+        else:
+            player.relight = 0
+
+    _apply_body(player, room)
+    if room.item is not None and player.mode == "move" and player.place == room.item.place:
+        if abs(player.x - room.item.x) <= 9:
+            events.append(_take(player, room))
+    if try_faint(player):
+        events.append("faint")
+    player.anim += 1
+    return events
+
+
+def _apply_body(player, room):
+    if player.mode == "climb":
+        place = _hotter(player.place, player.climb_to, room.heat)
+        points = min(POINT_RATE[player.place], POINT_RATE[player.climb_to])
+    else:
+        place = player.place
+        points = POINT_RATE[place]
+    rate = heat_rate(place, room.heat)
+    if rate > 0:
+        rate *= getattr(room, "heat_mul", 1.0)
+        if not getattr(room, "kiuas_on", True):
+            rate *= 0.35
+    if player.cool_t > 0 and rate > 0:
+        rate *= 0.5
+    player.heat += rate / FPS
+    if player.heat < 0:
+        player.heat = 0.0
+    elif player.heat > HEAT_MAX:
+        player.heat = HEAT_MAX
+    if player.beer_t > 0:
+        points *= BEER_MUL
+    if getattr(room, "door_t", 0) > 0 and _by_door(player):
+        points *= DOOR_POINT
+    if not getattr(room, "kiuas_on", True):
+        points *= KIUAS_POINT
+    player.score += points / FPS
+
+
+def _by_door(player):
+    if player.place in ("porch", "avanto"):
+        return True
+    return player.place == "floor" and player.x < DOOR_ZONE_X
+
+
+def throw_into(thrower, players, room):
+    """Heat the room. The thrower is cooked a little less than everyone else inside."""
+    room.heat = min(100.0, room.heat + LOYLY_ROOM)
+    room.loyly_t = 46
+    thrower.loyly_cd = LOYLY_CD
+    for player in players:
+        if player.mode == "faint" or not player.inside:
+            continue
+        add = LOYLY_SELF if player is thrower else LOYLY_OTHER
+        player.heat = min(HEAT_MAX, player.heat + add)
+    return "loyly"
+
+
+def _take(player, room):
+    kind = room.item.kind
+    if kind == "olut":
+        player.heat = max(0.0, player.heat - OLUT_COOL)
+        player.beers += 1
+        player.beer_t = BEER_TIME
+    else:
+        player.heat = max(0.0, player.heat - TOWEL_COOL)
+        player.cool_t = TOWEL_TIME
+    room.took_item()
+    return kind
+
+
+def try_faint(player):
+    if player.mode == "faint" or player.heat < HEAT_MAX:
+        return False
+    if player.mode == "climb":
+        lower = player.place if PLACES[player.place]["y"] >= PLACES[player.climb_to]["y"] else player.climb_to
+        _enter(player, lower, player.x)
+    player.mode = "faint"
+    player.vx = 0.0
+    player.heat = HEAT_MAX
+    player.score *= FAINT_KEEP
+    if player.score < 0:
+        player.score = 0.0
+    bot = getattr(player.pad, "bot", None)
+    if bot is not None:
+        bot.reset()
+    return True
+
+
+def separate(players):
+    """Unstack people who are just standing. A walker can pass; nobody is shoved off."""
+    groups = {}
+    for player in players:
+        if player.mode != "move":
+            continue
+        groups.setdefault(player.place, []).append(player)
+    for place, group in groups.items():
+        if len(group) < 2:
+            continue
+        group.sort(key=lambda p: p.x)
+        spec = PLACES[place]
+        for i in range(len(group) - 1):
+            a = group[i]
+            b = group[i + 1]
+            if abs(a.vx) >= 0.35 or abs(b.vx) >= 0.35:
+                continue
+            gap = b.x - a.x
+            if gap < BODY:
+                push = (BODY - gap) * 0.45
+                a.x -= push
+                b.x += push
+        for player in group:
+            if player.x < spec["x0"]:
+                player.x = float(spec["x0"])
+            elif player.x > spec["x1"]:
+                player.x = float(spec["x1"])
+
+
+def bench_x(player, place):
+    """Each seat is a different spot, so two bots do not fight over one plank."""
+    spec = PLACES[place]
+    left = spec["x0"] + 8
+    right = spec["x1"] - 10
+    if right <= left:
+        return (spec["x0"] + spec["x1"]) * 0.5
+    return left + (right - left) * (player.idx / 3.0)
+
+
+# ----- bots that try to win. Difficulty is timing, not a different sport. -----
+
+DIFFICULTY = {
+    # Around 76 heat is the exit that still scores. Easy overstays. Hard hits that exit and snipes the leader.
+    # Vaikea leaves on time and only throws a killing löyly when already cool.
+    # A hot throw used to cook Vaikea itself, so Normaali outscored it.
+    "helppo": {"leave": 96, "back": 20, "jitter": 4, "mistake": 0.55, "throw_heat": 99, "lead": 120, "self_max": 90, "react": 36, "item_at": 90, "item_p": 0.05},
+    "normaali": {"leave": 81, "back": 30, "jitter": 8, "mistake": 0.16, "throw_heat": 84, "lead": 40, "self_max": 64, "react": 14, "item_at": 48, "item_p": 0.6},
+    "vaikea": {"leave": 79, "back": 30, "jitter": 0, "mistake": 0.0, "throw_heat": 83, "lead": 10, "self_max": 52, "solo_throw": True, "react": 1, "item_at": 55, "item_p": 0.35},
+    "ihminen": {"leave": 77, "back": 30, "jitter": 5, "mistake": 0.09, "throw_heat": 82, "lead": 28, "self_max": 60, "react": 10, "item_at": 32, "item_p": 0.9},
+}
+
+
+class Bot:
+    """Sit the top bench, leave just in time, and throw löyly at a leader who is cooking."""
+
+    def __init__(self, name, rng):
+        self.name = name if name in DIFFICULTY else "normaali"
+        self.profile = DIFFICULTY[self.name]
+        self.rng = rng
+        self.plan = "bench"
+        self.lock = 0
+        self.notice = 0
+        self.leave_line = self.profile["leave"]
+        self.command = "idle"
+        self._roll_leave()
+
+    def reset(self):
+        """Clear a faint or a finished round so the next round is a fresh plan."""
+        self.plan = "bench"
+        self.lock = 0
+        self.notice = 0
+        self.command = "idle"
+        self._roll_leave()
+
+    def _roll_leave(self):
+        jitter = self.profile["jitter"]
+        self.leave_line = self.profile["leave"] + self.rng.randint(-jitter, jitter)
+
+    def decide(self, player, room, players):
+        des = blank()
+        self.command = "idle"
+        if player.mode == "faint":
+            return des
+        if self._crisis(player, room, players, des):
+            return des
+        self._plan(player, room, players)
+        if self.plan == "cool":
+            self._toward(player, "avanto", bench_x(player, "avanto"), des)
+        elif self.plan == "throw":
+            stove = min(PLACES["floor"]["x1"] - 4, STOVE_X + 8 + player.idx * 5)
+            self._toward(player, "floor", stove, des)
+            if (
+                player.mode == "move" and player.place == "floor" and player.x >= STOVE_X
+                and player.loyly_cd <= 0 and getattr(room, "kiuas_on", True)
+            ):
+                des["jump"] = True
+                self.plan = "bench"
+                self._roll_leave()
+                self.command = "act"
+        elif self.plan == "item" and room.item is not None:
+            self._toward(player, room.item.place, room.item.x, des)
+        else:
+            self.plan = "bench"
+            goal = "mid" if player.beers >= BEER_CAP else "high"
+            self._toward(player, goal, bench_x(player, goal), des)
+        if des["x"] or des["y"] or des["jump"]:
+            if self.command != "act":
+                self.command = "move" if (des["x"] or des["y"]) else "act"
+        return des
+
+    def _plan(self, player, room, players):
+        profile = self.profile
+        if self.lock > 0:
+            self.lock -= 1
+        inside = player.place in INSIDE or player.mode == "climb"
+        if self.plan == "cool":
+            if player.heat <= profile["back"] and player.place in ("porch", "avanto"):
+                self.plan = "bench"
+                self._roll_leave()
+            return
+        if player.place in ("porch", "avanto") and player.heat > profile["back"]:
+            self.plan = "cool"
+            return
+        if inside and player.heat >= self.leave_line and self.lock <= 0:
+            self.notice += 1
+            if self.notice >= profile["react"]:
+                self.plan = "cool"
+                self.notice = 0
+            return
+        self.notice = 0
+        if self.plan == "item" and (room.item is None or player.heat < 24):
+            self.plan = "bench"
+        if self.plan == "throw" and player.loyly_cd > 20:
+            self.plan = "bench"
+        if self.plan != "bench" or player.mode != "move":
+            return
+        if player.anim % 15 != 0:
+            return
+        if player.heat > self.leave_line - 12 and self.rng.random() < profile["mistake"]:
+            self.lock = 45 + self.rng.randint(0, 50)
+            return
+        if self._wants_throw(player, players) and getattr(room, "kiuas_on", True):
+            self.plan = "throw"
+            return
+        if self._wants_item(player, room):
+            self.plan = "item"
+
+    def _crisis(self, player, room, players, des):
+        if getattr(room, "door_t", 0) > 0 and player.mode == "move":
+            if player.place == "floor" and player.x <= PLACES["floor"]["x0"] + 26:
+                des["jump"] = True
+                self.command = "act"
+                return True
+            if player.place in ("porch", "avanto"):
+                self._toward(player, "floor", 210, des)
+                self.command = "move"
+                return True
+        if not getattr(room, "kiuas_on", True):
+            if self._should_light(player, players):
+                if player.place == "floor" and player.x >= STOVE_X:
+                    des["jump"] = True
+                    self.command = "act"
+                else:
+                    stove = min(PLACES["floor"]["x1"] - 4, STOVE_X + 10)
+                    self._toward(player, "floor", stove, des)
+                    self.command = "move"
+                return True
+        return False
+
+    def _should_light(self, player, players):
+        if player.place == "floor" and player.x >= STOVE_X:
+            return True
+        pool = [p for p in players if p.mode != "faint" and p.heat < 72]
+        if not pool:
+            pool = [p for p in players if p.mode != "faint"]
+        if not pool:
+            return False
+        hero = min(pool, key=lambda p: p.idx)
+        return hero is player
+
+    def _wants_item(self, player, room):
+        item = room.item
+        if item is None:
+            return False
+        if item.kind == "olut":
+            if player.beers >= BEER_CAP:
+                return False
+            # The third beer locks you off the top bench. Only the sloppy bot drinks it.
+            if player.beers >= BEER_CAP - 1 and self.name != "helppo":
+                return False
+        if player.heat < self.profile["item_at"] and not (item.kind == "olut" and player.beers < 2 and player.heat > 28):
+            return False
+        return self.rng.random() < self.profile["item_p"]
+
+    def _wants_throw(self, player, players):
+        profile = self.profile
+        if player.loyly_cd > 0 or player.heat > profile.get("self_max", self.leave_line - 18):
+            return False
+        if profile.get("solo_throw"):
+            recent = LOYLY_CD - 50
+            for other in players:
+                if other is not player and other.loyly_cd > recent:
+                    return False
+        hot = profile["throw_heat"]
+        lead = profile["lead"]
+        for other in players:
+            if other is player or other.mode == "faint" or not other.inside:
+                continue
+            if other.score < player.score + lead:
+                continue
+            if other.heat >= hot:
+                return True
+        return False
+
+    def _toward(self, player, place, x, des):
+        if player.mode == "climb":
+            dest_y = PLACES[player.climb_to]["y"]
+            des["y"] = -1.0 if dest_y < player.y else 1.0
+            return
+        if player.mode != "move":
+            return
+        if player.place != place:
+            here = ORDER.index(player.place)
+            there = ORDER.index(place)
+            if there > here:
+                if player.place in ("avanto", "porch"):
+                    des["x"] = 1.0
+                else:
+                    self._climb_aim(player, des, up=True)
+            elif player.place == "porch" and place == "avanto":
+                des["x"] = -1.0
+            elif player.place == "floor":
+                des["x"] = -1.0
+            elif player.place in ("low", "mid", "high"):
+                self._climb_aim(player, des, up=False)
+            else:
+                des["x"] = 1.0
+            return
+        if player.x < x - 3:
+            des["x"] = 1.0
+        elif player.x > x + 3:
+            des["x"] = -1.0
+
+    def _climb_aim(self, player, des, up):
+        spec = PLACES[player.place]
+        cx = spec["climb_x"]
+        if player.x < cx - 4:
+            des["x"] = 1.0
+        elif player.x > cx + 4:
+            des["x"] = -1.0
+        else:
+            des["y"] = -1.0 if up else 1.0
+
+# ---- draw.py ----
+# 320x180 sauna. The background is painted once; the frame only adds fire, people and steam.
+import math
+
+import pygame
+
+
+WOOD_DK = (78, 42, 24)
+WOOD = (132, 78, 42)
+WOOD_LT = (176, 116, 64)
+LOG = (112, 64, 34)
+LOG_DK = (64, 36, 20)
+STONE = (62, 60, 66)
+STONE_LT = (108, 104, 110)
+LAKE = (32, 86, 122)
+LAKE_DK = (18, 52, 82)
+ICE = (214, 232, 236)
+SKY_TOP = (24, 36, 72)
+SKY_BOT = (78, 118, 158)
+PINE = (18, 46, 34)
+SKIN = (255, 214, 186)
+HOT = (214, 42, 36)
+
+
+def _mix(a, b, t):
+    t = 0.0 if t < 0 else 1.0 if t > 1 else t
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+def make_background():
+    s = pygame.Surface((W, H))
+    for y in range(H):
+        k = y / float(H - 1)
+        s.fill(_mix(SKY_TOP, SKY_BOT, k), (0, y, 112, 1))
+    pygame.draw.circle(s, (232, 226, 196), (22, 28), 8)
+    pygame.draw.circle(s, SKY_TOP, (26, 26), 7)
+    _pine(s, 4, 78)
+    _pine(s, 72, 86)
+    pygame.draw.rect(s, LAKE_DK, (0, 160, 112, 20))
+    pygame.draw.rect(s, LAKE, (0, 158, 112, 6))
+    pygame.draw.ellipse(s, ICE, (12, 156, 44, 12))
+    pygame.draw.ellipse(s, (16, 40, 64), (20, 159, 28, 8))
+    for x in range(0, 100, 8):
+        pygame.draw.rect(s, WOOD if (x // 8) % 2 == 0 else WOOD_LT, (x, 142, 8, 16))
+        pygame.draw.rect(s, WOOD_DK, (x, 142, 8, 2))
+    pygame.draw.rect(s, LOG_DK, (96, 108, 18, 50))
+    pygame.draw.rect(s, (48, 28, 18), (102, 116, 8, 34))
+    for y in range(16, 156, 8):
+        pygame.draw.rect(s, LOG if (y // 8) % 2 == 0 else WOOD, (112, y, W - 112, 8))
+        pygame.draw.rect(s, LOG_DK, (112, y + 6, W - 112, 2))
+    pygame.draw.rect(s, (36, 48, 78), (188, 22, 28, 14))
+    pygame.draw.rect(s, WOOD_LT, (186, 20, 32, 18), 2)
+    _bench(s, 156, 242, 50)
+    _bench(s, 142, 254, 84)
+    _bench(s, 128, 264, 118)
+    pygame.draw.rect(s, WOOD_DK, (112, 156, W - 112, 24))
+    for x in range(112, W, 10):
+        pygame.draw.rect(s, WOOD, (x, 156, 9, 6))
+    rail = (214, 176, 112)
+    for y in range(50, 156, 7):
+        pygame.draw.rect(s, rail, (230, y, 3, 6))
+        pygame.draw.rect(s, rail, (246, y, 3, 6))
+        pygame.draw.rect(s, (70, 40, 22), (233, y + 2, 13, 2))
+    pygame.draw.rect(s, STONE, (276, 112, 38, 44))
+    pygame.draw.rect(s, STONE_LT, (280, 116, 30, 8))
+    pygame.draw.rect(s, (24, 22, 26), (286, 128, 18, 20))
+    pygame.draw.rect(s, WOOD, (260, 146, 14, 10))
+    pygame.draw.rect(s, (36, 78, 110), (263, 142, 8, 5))
+    pygame.draw.rect(s, LOG_DK, (112, 16, W - 112, 6))
+    return s
+
+
+def _pine(s, x, top):
+    pygame.draw.rect(s, (72, 48, 28), (x + 6, top + 36, 3, 18))
+    pygame.draw.polygon(s, PINE, ((x + 7, top), (x, top + 22), (x + 14, top + 22)))
+    pygame.draw.polygon(s, PINE, ((x + 7, top + 10), (x - 2, top + 36), (x + 16, top + 36)))
+
+
+def _bench(s, x0, x1, y):
+    pygame.draw.rect(s, WOOD_DK, (x0, y, x1 - x0, 8))
+    for x in range(x0, x1, 8):
+        pygame.draw.rect(s, WOOD_LT, (x, y, 7, 3))
+    pygame.draw.rect(s, LOG_DK, (x0 + 6, y + 8, 3, 10))
+    pygame.draw.rect(s, LOG_DK, (x1 - 10, y + 8, 3, 10))
+
+
+def _font(g):
+    return g.font
+
+
+def draw_frame(g):
+    st = g.state
+    if st == "lobby":
+        draw_lobby(g)
+    elif st == "settings":
+        draw_settings(g)
+    elif st == "legend":
+        draw_legend(g)
+    elif st == "results":
+        draw_results(g)
+    else:
+        draw_world(g)
+        if st == "ready":
+            draw_count(g)
+        elif st == "play" and g.go_flash:
+            blit(g.canvas, _font(g), tr("go"), W // 2, 78, (255, 236, 170), 3, center=True)
+        elif st == "roundend":
+            draw_round_end(g)
+        elif st == "paused":
+            draw_pause(g)
+    _notes(g)
+    draw_quit(g)
+
+
+def draw_world(g):
+    c = g.canvas
+    c.blit(g.bg, (0, 0))
+    _fire(c, g)
+    _gust(c, g)
+    if g.room is not None and g.room.item is not None:
+        _item(c, g.room.item, g.t)
+    _bits(c, g.bits)
+    order = sorted(g.players, key=lambda p: (p.y, p.idx))
+    for player in order:
+        draw_player(c, player, g.t)
+    _soak(c, g.t)
+    if g.room is not None and g.room.door_t:
+        pygame.draw.rect(c, (186, 214, 230), (100, 118, 10, 36))
+        blit(c, _font(g), tr("door_msg"), 70, 20, (220, 240, 255), 1, center=True)
+        blit(c, _font(g), tr("shut_hint"), 70, 34, (255, 244, 220), 1, center=True)
+    elif g.room is not None and not g.room.kiuas_on:
+        blit(c, _font(g), tr("kiuas_msg"), 250, 20, (255, 180, 120), 1, center=True)
+        blit(c, _font(g), tr("light_hint"), 250, 34, (255, 236, 200), 1, center=True)
+    if any(p.place in ("porch", "avanto") and p.mode != "faint" for p in g.players):
+        pygame.draw.rect(c, WOOD_LT, (100, 116, 4, 28))
+    _hud(g)
+
+
+def _soak(c, t):
+    """Drawn after the bathers so an avanto dip actually goes under the water."""
+    shift = (t // 8) % 2
+    pygame.draw.rect(c, LAKE if shift == 0 else LAKE_DK, (0, 166, 104, 14))
+    pygame.draw.rect(c, ICE, (14, 163, 40, 3))
+    pygame.draw.rect(c, (186, 224, 232), (24 + shift, 164, 12, 1))
+
+
+def _fire(c, g):
+    if g.room is not None and not g.room.kiuas_on:
+        pygame.draw.rect(c, (20, 18, 22), (286, 132, 18, 16))
+        return
+    heat = 22 if g.room is None else g.room.heat
+    glow = heat / 100.0
+    if g.room is not None and g.room.loyly_t:
+        glow = min(1.0, glow + 0.35)
+    h = 6 + int(glow * 14)
+    col = _mix((180, 70, 24), (255, 220, 90), glow)
+    pygame.draw.rect(c, col, (290, 146 - h, 10, h))
+    pygame.draw.rect(c, (255, 244, 210), (293, 148 - h, 4, max(3, h // 2)))
+    if g.room is not None and g.room.fx == "flare" and g.room.fx_t:
+        pygame.draw.rect(c, (255, 180, 60), (276, 112, 38, 4))
+
+
+def _gust(c, g):
+    if g.room is None or g.room.fx != "gust" or not g.room.fx_t:
+        return
+    x = 108 + (g.t % 5) * 3
+    for i in range(4):
+        pygame.draw.rect(c, (200, 220, 230), (x + i * 14, 132 + (i % 2) * 6, 10, 2))
+
+
+def _item(c, item, t):
+    spec = PLACES[item.place]
+    x = int(item.x) - 3
+    y = int(spec["y"]) - 12
+    bob = int(math.sin(t * 0.15) * 1)
+    y += bob
+    if item.kind == "olut":
+        pygame.draw.rect(c, (92, 60, 28), (x + 1, y + 2, 4, 8))
+        pygame.draw.rect(c, (220, 200, 140), (x + 1, y, 4, 3))
+        pygame.draw.rect(c, (240, 230, 200), (x, y - 1, 6, 2))
+    else:
+        pygame.draw.rect(c, (70, 140, 180), (x, y + 2, 8, 6))
+        pygame.draw.rect(c, (230, 240, 245), (x, y + 4, 8, 2))
+
+
+def _bits(c, bits):
+    for bit in bits:
+        x, y, _vx, _vy, life, col = bit
+        if life <= 0:
+            continue
+        size = 3 if life > 12 else 2
+        pygame.draw.rect(c, col, (int(x), int(y), size, size))
+
+
+def draw_player(c, player, t, at=None):
+    if at is None:
+        x = int(player.x - PW // 2)
+        y = int(player.y - PH)
+    else:
+        x, y = at
+    heat = max(0.0, min(1.0, player.heat / 100.0))
+    skin = _mix(SKIN, HOT, heat * 0.92)
+    col, edge = PCOLORS[player.idx]
+    if player.mode == "faint":
+        feet = int(player.y) if at is None else y + PH
+        _fainted(c, x, feet, skin, col, edge, t, player.idx)
+        _meter(c, x, feet - PH, 1.0)
+        return
+    if player.beers >= 3:
+        x += int(math.sin(t * 0.7 + player.idx) * 2)
+    bob = 0
+    if abs(player.vx) > 0.2 and player.mode == "move":
+        bob = 1 if (player.anim // 4) % 2 == 0 else 0
+    if player.place == "avanto":
+        _body(c, x, y + 2, skin, col, edge, heat, t, player, bob, water=True)
+    else:
+        _body(c, x, y - bob, skin, col, edge, heat, t, player, bob, water=False)
+    _meter(c, x, y - bob, heat)
+    _beer(c, x, y, player)
+
+
+def _body(c, x, y, skin, col, edge, heat, t, player, bob, water):
+    pygame.draw.rect(c, (30, 18, 12), (x + 2, y + PH - 2, 8, 2))
+    if not water:
+        step = bob
+        pygame.draw.rect(c, skin, (x + 2, y + 11, 3, 5))
+        pygame.draw.rect(c, skin, (x + 7, y + 11 - step, 3, 5))
+    pygame.draw.rect(c, col, (x + 1, y + 7, 10, 5))
+    pygame.draw.rect(c, edge, (x + 1, y + 7, 10, 5), 1)
+    pygame.draw.rect(c, skin, (x + 2, y + 1, 8, 7))
+    pygame.draw.rect(c, edge, (x + 2, y + 1, 8, 7), 1)
+    pygame.draw.rect(c, (50, 32, 24), (x + 2, y, 8, 2))
+    look = 1 if player.face > 0 else 0
+    if heat > 0.82:
+        pygame.draw.rect(c, (60, 20, 20), (x + 3 + look, y + 3, 2, 1))
+        pygame.draw.rect(c, (60, 20, 20), (x + 7 + look, y + 4, 2, 1))
+    else:
+        pygame.draw.rect(c, (40, 24, 24), (x + 3 + look, y + 3, 2, 2))
+        pygame.draw.rect(c, (40, 24, 24), (x + 6 + look, y + 3, 2, 2))
+    if heat > 0.42:
+        drop = (t // 3 + player.idx * 3) % 8
+        pygame.draw.rect(c, (190, 230, 255), (x - 1, y + 2 + drop, 1, 2))
+    if player.cool_t > 0 and (t // 6) % 2 == 0:
+        pygame.draw.rect(c, (140, 210, 230), (x + 4, y + 8, 4, 2))
+
+
+def _fainted(c, x, feet, skin, col, edge, t, idx):
+    y = feet - 8
+    pygame.draw.rect(c, skin, (x, y, 6, 7))
+    pygame.draw.rect(c, edge, (x, y, 6, 7), 1)
+    pygame.draw.rect(c, col, (x + 6, y + 1, 12, 6))
+    pygame.draw.rect(c, edge, (x + 6, y + 1, 12, 6), 1)
+    pygame.draw.rect(c, (40, 16, 16), (x + 1, y + 2, 2, 1))
+    pygame.draw.rect(c, (40, 16, 16), (x + 1, y + 4, 2, 1))
+    pygame.draw.rect(c, (40, 16, 16), (x + 3, y + 3, 1, 1))
+    for i in range(3):
+        sx = x + 4 + i * 5
+        sy = y - 5 + int(math.sin(t * 0.25 + i + idx) * 2)
+        pygame.draw.rect(c, (255, 220, 80), (sx, sy, 2, 2))
+
+
+def _beer(c, x, y, player):
+    if player.beers <= 0 and player.beer_t <= 0:
+        return
+    for i in range(min(3, player.beers)):
+        pygame.draw.rect(c, (150, 90, 30), (x + i * 4, y - 8, 3, 4))
+        pygame.draw.rect(c, (240, 220, 160), (x + i * 4, y - 9, 3, 2))
+    if player.beer_t > 0:
+        w = max(1, int(PW * player.beer_t / float(BEER_TIME)))
+        pygame.draw.rect(c, (40, 24, 12), (x, y - 4, PW, 2))
+        pygame.draw.rect(c, (255, 196, 60), (x, y - 4, w, 2))
+
+
+def _meter(c, x, y, heat):
+    bar_y = y - 4
+    if bar_y < 16:
+        bar_y = y + PH + 1
+    pygame.draw.rect(c, (20, 12, 10), (x, bar_y, PW, 4))
+    w = int((PW - 2) * max(0.0, min(1.0, heat)))
+    if heat < 0.45:
+        col = (72, 210, 96)
+    elif heat < 0.75:
+        col = (244, 196, 48)
+    else:
+        col = (232, 64, 48)
+    if w:
+        pygame.draw.rect(c, col, (x + 1, bar_y + 1, w, 2))
+
+
+def _hud(g):
+    c = g.canvas
+    font = _font(g)
+    pygame.draw.rect(c, (32, 18, 14), (0, 0, W, 16))
+    pygame.draw.rect(c, (90, 52, 30), (0, 15, W, 1))
+    for i, player in enumerate(g.players):
+        x = 2 + i * 32
+        pygame.draw.rect(c, PCOLORS[player.idx][0], (x, 4, 6, 8))
+        blit(c, font, str(int(player.score)), x + 8, 1, (255, 236, 214), 1, shadow=False)
+    rounds = getattr(g, "match_rounds", 3)
+    hud = tr("round", g.round_no, rounds)
+    blit(c, font, hud, 132, 1, (255, 214, 160), 1, shadow=False)
+    left = 0 if g.room is None else max(0, g.round_left)
+    secs = (left + FPS - 1) // FPS if left else 0
+    # imported locally to keep this file from needing a cycle on a renamed const
+    clock = "%d:%02d" % (secs // 60, secs % 60)
+    col = (255, 120, 90) if 0 < secs <= 10 else (255, 244, 220)
+    blit(c, font, clock, 214, 1, col, 1, shadow=False)
+    heat = 0 if g.room is None else g.room.heat / 100.0
+    pygame.draw.rect(c, (255, 220, 170), (262, 4, 54, 8), 1)
+    pygame.draw.rect(c, (48, 28, 22), (263, 5, 52, 6))
+    pygame.draw.rect(c, _mix((90, 190, 90), (255, 70, 36), heat), (263, 5, max(1, int(52 * heat)), 6))
+
+
+def _notes(g):
+    font = _font(g)
+    for text, x, y, life, col in g.notes:
+        if life <= 0:
+            continue
+        blit(g.canvas, font, text, int(x), int(y), col, 1, center=True)
+
+
+def draw_lobby(g):
+    c = g.canvas
+    c.blit(g.bg, (0, 0))
+    c.blit(g.veil, (0, 0))
+    font = _font(g)
+    bob = int(math.sin(g.t * 0.08) * 2)
+    blit(c, font, tr("title"), W // 2, 14 + bob, (255, 214, 140), 2, center=True)
+    ver = "V" + g.version
+    vw, _vh = font.size(ver, 1)
+    blit(c, font, ver, W - vw - 4, 2, (220, 170, 120), 1, shadow=False)
+    blit(c, font, tr("tag"), W // 2, 36, (255, 186, 130), 1, center=True)
+    for i in range(4):
+        x = 8 + i * 78
+        box = pygame.Rect(x, 50, 74, 78)
+        pygame.draw.rect(c, (255, 232, 204), box)
+        pygame.draw.rect(c, PCOLORS[i][1], box, 2)
+        if i < len(g.players):
+            player = g.players[i]
+            draw_player(c, player, g.t, at=(x + 28, 72))
+            who = label(player)
+            blit(c, font, who, x + 37, 112, PCOLORS[i][0], 1, center=True)
+        else:
+            if (g.t // 25) % 2 == 0:
+                blit(c, font, tr("press"), x + 37, 78, (140, 90, 70), 1, center=True)
+            blit(c, font, tr("join"), x + 37, 94, (110, 70, 50), 1, center=True)
+    ready = len(g.players) >= 2 and any(not p.cpu for p in g.players)
+    hint = tr("start_hint") if ready else tr("need")
+    blit(c, font, hint, W // 2, 140, (255, 220, 180), 1, center=True)
+    blit(c, font, tr("cpu_hint") + "   " + tr("legend_btn"), W // 2, 154, (255, 214, 170), 1, center=True)
+    blit(c, font, tr("leave_hint"), W // 2, 168, (230, 180, 140), 1, center=True)
+
+
+def draw_settings(g):
+    c = g.canvas
+    c.blit(g.bg, (0, 0))
+    c.blit(g.veil, (0, 0))
+    font = _font(g)
+    panel = pygame.Rect(6, 2, W - 12, 156)
+    pygame.draw.rect(c, (255, 236, 214), panel)
+    pygame.draw.rect(c, (120, 64, 36), panel, 2)
+    blit(c, font, tr("settings"), W // 2, 8, (120, 64, 36), 1, center=True, shadow=False)
+    rows = g.setting_rows()
+    for i, (_key, name, value) in enumerate(rows):
+        y = 24 + i * 14
+        if i == g.menu_i:
+            pygame.draw.rect(c, (255, 196, 120), (12, y - 1, W - 24, 14))
+        ink = (60, 28, 16)
+        blit(c, font, name, 18, y, ink, 1, shadow=False)
+        if value:
+            vw, _vh = font.size(value, 1)
+            blit(c, font, value, W - 18 - vw, y, ink, 1, shadow=False)
+    blit(c, font, tr("back"), W // 2, 166, (255, 236, 214), 1, center=True)
+
+
+def draw_legend(g):
+    c = g.canvas
+    c.blit(g.bg, (0, 0))
+    c.blit(g.veil, (0, 0))
+    font = _font(g)
+    blit(c, font, tr("legend"), W // 2, 6, (255, 220, 150), 1, center=True)
+    keys = ("c_move", "c_climb", "c_loyly", "c_door", "c_avanto", "c_item", "c_score", "c_faint", "c_win")
+    for i, key in enumerate(keys):
+        blit(c, font, tr(key), W // 2, 22 + i * 15, (255, 236, 214), 1, center=True)
+    blit(c, font, tr("back"), W // 2, 164, (255, 210, 140), 1, center=True)
+
+
+def draw_count(g):
+    font = _font(g)
+    if g.t < 60:
+        label, col = "3", (255, 120, 80)
+    elif g.t < 120:
+        label, col = "2", (255, 170, 70)
+    elif g.t < 180:
+        label, col = "1", (255, 214, 100)
+    else:
+        label, col = tr("go"), (255, 244, 180)
+    blit(g.canvas, font, label, W // 2, 70, col, 3, center=True)
+    blit(g.canvas, font, tr("hint_play"), W // 2, 164, (255, 232, 200), 1, center=True)
+
+
+def draw_round_end(g):
+    c = g.canvas
+    c.blit(g.veil, (0, 0))
+    font = _font(g)
+    panel = pygame.Rect(12, 20, W - 24, 132)
+    pygame.draw.rect(c, (255, 236, 214), panel)
+    pygame.draw.rect(c, (120, 64, 36), panel, 2)
+    winners = g.round_winners or []
+    if len(winners) == 1:
+        title = tr("win", label(winners[0]))
+        col = PCOLORS[winners[0].idx][0]
+    else:
+        title, col = tr("draw"), (120, 64, 36)
+    blit(c, font, title, W // 2, 28, col, 1, center=True)
+    blit(c, font, tr("board"), W // 2, 42, (120, 70, 40), 1, center=True)
+    order = sorted(g.players, key=lambda p: (-p.round_points, p.idx))
+    for i, player in enumerate(order):
+        y = 58 + i * 18
+        pygame.draw.rect(c, PCOLORS[player.idx][0], (20, y + 2, 8, 8))
+        blit(c, font, label(player), 32, y, (70, 36, 24), 1, shadow=False)
+        line = "%d" % player.round_points
+        if player.mode == "faint":
+            line += " " + tr("fainted")
+        blit(c, font, line, 130, y, (90, 48, 28), 1, shadow=False)
+        tot = "%s %d" % (tr("total"), player.bank)
+        tw, _th = font.size(tot, 1)
+        blit(c, font, tot, W - 28 - tw, y, (110, 64, 40), 1, shadow=False)
+    if g.t > 24 and (g.t // 20) % 2 == 0:
+        blit(c, font, tr("next"), W // 2, 162, (255, 220, 170), 1, center=True)
+
+
+def draw_results(g):
+    c = g.canvas
+    c.blit(g.bg, (0, 0))
+    pygame.draw.rect(c, (32, 18, 14), (0, 0, W, 13))
+    font = _font(g)
+    blit(c, font, tr("results"), W // 2, 2, (255, 220, 160), 1, center=True)
+    if g.players:
+        champ = max(g.players, key=lambda p: (p.bank, p.wins, -p.faints, -p.idx))
+        blit(c, font, tr("champ", label(champ)), W // 2, 20, PCOLORS[champ.idx][0], 1, center=True)
+        draw_player(c, champ, g.t, at=(W // 2 - 6, 32))
+    order = sorted(g.players, key=lambda p: (-p.bank, -p.wins, p.idx))
+    panel = pygame.Rect(16, 64, W - 32, 78)
+    pygame.draw.rect(c, (255, 236, 214), panel)
+    pygame.draw.rect(c, (140, 80, 48), panel, 2)
+    for i, player in enumerate(order):
+        y = 72 + i * 16
+        pygame.draw.rect(c, PCOLORS[player.idx][0], (26, y, 8, 8))
+        blit(c, font, label(player), 40, y, (70, 36, 24), 1, shadow=False)
+        blit(c, font, str(player.bank), 168, y, (90, 48, 28), 1, shadow=False)
+        for k in range(min(3, player.wins)):
+            pygame.draw.rect(c, (220, 160, 40), (230 + k * 8, y, 6, 6))
+    blit(c, font, tr("rematch") + "   " + tr("back_lobby"), W // 2, 164, (255, 236, 210), 1, center=True)
+
+
+def draw_pause(g):
+    c = g.canvas
+    c.blit(g.veil, (0, 0))
+    font = _font(g)
+    blit(c, font, tr("paused"), W // 2, 48, (255, 220, 150), 2, center=True)
+    opts = (tr("resume"), tr("to_lobby"), tr("quit"))
+    for i, label in enumerate(opts):
+        y = 84 + i * 20
+        if i == g.menu_i:
+            pygame.draw.rect(c, (255, 210, 140), (70, y - 3, 180, 16))
+        blit(c, font, label, W // 2, y, (90, 40, 28), 1, center=True)
+
+
+def draw_quit(g):
+    if g.quit_hold < 6:
+        return
+    c = g.canvas
+    bw = 120
+    x = W // 2 - bw // 2
+    pygame.draw.rect(c, (40, 20, 24), (x, 4, bw, 10))
+    pygame.draw.rect(c, (255, 236, 214), (x, 4, int(bw * min(1, g.quit_hold / 60.0)), 10))
+    blit(c, _font(g), tr("quitting"), W // 2, 5, (80, 30, 24), 1, center=True)
+
+# ---- game.py ----
+# Couch loop: join, sweat, scoreboard, again.
+import random
+
+import pygame
+
+
+
+SPOTS = (148, 178, 208, 236)
+
+
+def _dpad_move(button):
+    if button is None:
+        return None
+    pairs = (
+        ("CONTROLLER_BUTTON_DPAD_LEFT", (-1, 0)),
+        ("CONTROLLER_BUTTON_DPAD_RIGHT", (1, 0)),
+        ("CONTROLLER_BUTTON_DPAD_UP", (0, -1)),
+        ("CONTROLLER_BUTTON_DPAD_DOWN", (0, 1)),
+    )
+    for name, move in pairs:
+        if button == getattr(pygame, name, None):
+            return move
+    return None
+
+
+class Game:
+    def __init__(self, screen):
+        self.screen = screen
+        self.canvas = pygame.Surface((W, H))
+        self.font = Font()
+        self.bg = make_background()
+        self.veil = pygame.Surface((W, H), pygame.SRCALPHA)
+        self.veil.fill((28, 16, 12, 150))
+        self.version = load_version()
+        self.settings = load_settings()
+        self.match_rounds = int(self.settings["rounds"])
+        self.round_total = int(self.settings["round_secs"]) * FPS
+        self.legend_from = "lobby"
+        self.pads = {}
+        kb = Pad("kb")
+        self.pads[kb.id] = kb
+        self.players = []
+        self.room = None
+        self.state = "lobby"
+        self.t = 0
+        self.round_no = 0
+        self.round_left = 0
+        self.round_winners = []
+        self.ending = 0
+        self.go_flash = 0
+        self.menu_i = 0
+        self.quit_hold = 0
+        self.running = True
+        self.autoplay = False
+        self.seed = 1
+        self.rng = random.Random(1)
+        self.bits = []
+        self.notes = []
+        self.edges = {}
+        self.stats = {
+            "frames": 0, "faints": 0, "loyly": 0, "dips": 0, "pickups": 0,
+            "exits": 0, "gusts": 0, "flares": 0, "rounds_ended": 0,
+            "early": 0, "wipes": 0,
+        }
+        apply_volume(self.settings["sfx_vol"], self.settings["music_vol"])
+        self.sync_cpus()
+
+    def public_stats(self):
+        return dict(self.stats)
+
+    def arm_autoplay(self, seed):
+        self.autoplay = True
+        self.seed = seed
+        self.rng = random.Random(seed + 3)
+        self.settings["cpus"] = 3
+        self.settings["difficulty"] = "normaali"
+        self.sync_cpus()
+        pad = ScriptPad("human")
+        pad.auto = True
+        pad.join_frame = 8
+        pad.bot = Bot("ihminen", random.Random(seed + 11))
+        self.pads[pad.id] = pad
+
+    def goto(self, name):
+        self.state = name
+        self.t = 0
+
+    def add_player(self, pad):
+        if any(p.pad is pad for p in self.players):
+            return None
+        humans = [p for p in self.players if not p.cpu]
+        cpus = [p for p in self.players if p.cpu]
+        if len(humans) >= 4:
+            return None
+        if len(humans) + len(cpus) >= 4 and cpus:
+            self._remove_cpu()
+            cpus = [p for p in self.players if p.cpu]
+        player = Player(0, pad)
+        player.cpu = False
+        player.reset_round("floor", SPOTS[0])
+        humans.append(player)
+        self.players = humans + cpus
+        self.reindex()
+        self.settings["cpus"] = len(cpus)
+        sfx("join")
+        return player
+
+    def _remove_cpu(self):
+        for player in reversed(self.players):
+            if player.cpu:
+                self.players.remove(player)
+                self.pads.pop(player.pad.id, None)
+                self.reindex()
+                return player
+        return None
+
+    def sync_cpus(self):
+        humans = [p for p in self.players if not p.cpu]
+        cap = max(0, 4 - len(humans))
+        want = min(int(self.settings["cpus"]), cap)
+        self.settings["cpus"] = want
+        cpus = [p for p in self.players if p.cpu]
+        while len(cpus) > want:
+            gone = cpus.pop()
+            self.pads.pop(gone.pad.id, None)
+        while len(cpus) < want:
+            pad = ScriptPad("cpu")
+            pad.id = "cpu-%d-%d" % (self.t, len(cpus))
+            pad.auto = True
+            pad.bot = Bot(self.settings["difficulty"], random.Random(self.seed + 300 + len(cpus) + self.t))
+            self.pads[pad.id] = pad
+            player = Player(0, pad)
+            player.cpu = True
+            cpus.append(player)
+        for player in cpus:
+            bot = getattr(player.pad, "bot", None)
+            if bot is None or bot.name != self.settings["difficulty"]:
+                player.pad.bot = Bot(
+                    self.settings["difficulty"],
+                    random.Random(self.seed + 400 + player.idx + self.t),
+                )
+                player.pad.auto = True
+        self.players = humans + cpus
+        self.reindex()
+
+    def cycle_cpus(self):
+        humans = len([p for p in self.players if not p.cpu])
+        cap = 4 - humans
+        if cap <= 0:
+            self.settings["cpus"] = 0
+        else:
+            cur = min(int(self.settings["cpus"]), cap)
+            self.settings["cpus"] = (cur + 1) % (cap + 1)
+        self.sync_cpus()
+        save_settings(self.settings)
+
+    def reindex(self):
+        for i, player in enumerate(self.players):
+            player.idx = i
+
+    def owner(self, pad):
+        for player in self.players:
+            if player.pad is pad:
+                return player
+        return None
+
+    def handle_device(self, ev):
+        if ev.type == pygame.JOYDEVICEADDED:
+            try:
+                joy = pygame.joystick.Joystick(ev.device_index)
+            except Exception:
+                return
+            iid = joy.get_instance_id()
+            pad = None
+            try:
+                from pygame._sdl2 import controller
+                if not controller.get_init():
+                    try:
+                        controller.init()
+                    except Exception:
+                        pass
+                if controller.is_controller(ev.device_index):
+                    try:
+                        con = controller.Controller.from_joystick(joy)
+                    except Exception:
+                        con = controller.Controller(ev.device_index)
+                    pad = Pad("gc", con, iid=iid, joy=joy)
+            except Exception:
+                pad = None
+            if pad is None:
+                pad = Pad("js", joy, iid=iid, joy=joy)
+            self.pads[pad.id] = pad
+        elif ev.type == pygame.JOYDEVICEREMOVED:
+            self.drop_pad("js%d" % ev.instance_id)
+
+    def drop_pad(self, pid):
+        pad = self.pads.pop(pid, None)
+        if pad is None:
+            return
+        for player in self.players:
+            if player.pad is pad:
+                script = ScriptPad("auto-%d" % player.idx)
+                script.auto = True
+                script.bot = Bot("tasainen", random.Random(self.seed + 90 + player.idx))
+                player.pad = script
+                self.pads[script.id] = script
+
+    def grab_pads(self):
+        if self.state not in ("play", "ready"):
+            return
+        for pad in list(self.pads.values()):
+            if self.owner(pad) is not None or not pad.pressed("jump"):
+                continue
+            for player in self.players:
+                if getattr(player.pad, "auto", False):
+                    player.pad = pad
+                    break
+
+    def poll_events(self):
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                self.running = False
+            elif ev.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
+                self.handle_device(ev)
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                self.running = False
+            else:
+                self._note_edge(ev)
+
+    def _note_edge(self, ev):
+        """D-pad and arrows often arrive only as events, not as a held axis."""
+        kind = ev.type
+        if kind == pygame.KEYDOWN:
+            key = getattr(ev, "key", None)
+            if key in (pygame.K_LEFT, pygame.K_a):
+                self._remember_edge("kb", x=-1)
+            elif key in (pygame.K_RIGHT, pygame.K_d):
+                self._remember_edge("kb", x=1)
+            elif key in (pygame.K_UP, pygame.K_w):
+                self._remember_edge("kb", y=-1)
+            elif key in (pygame.K_DOWN, pygame.K_s):
+                self._remember_edge("kb", y=1)
+            elif key in (pygame.K_x, pygame.K_SPACE):
+                self._remember_edge("kb", jump=True)
+            elif key == pygame.K_q:
+                self._remember_edge("kb", cpu=True)
+            return
+        if kind == pygame.JOYHATMOTION:
+            hx, hy = ev.value
+            self._remember_edge(
+                "js%d" % ev.instance_id,
+                x=hx or None,
+                y=(-hy if hy else None),
+            )
+            return
+        if kind not in (getattr(pygame, "CONTROLLERBUTTONDOWN", -1), pygame.JOYBUTTONDOWN):
+            return
+        button = getattr(ev, "button", None)
+        iid = getattr(ev, "instance_id", None)
+        if iid is None:
+            return
+        pid = "js%d" % int(iid)
+        move = _dpad_move(button)
+        if move is not None:
+            x, y = move
+            self._remember_edge(pid, x=x or None, y=y or None)
+            return
+        jump = button in (
+            getattr(pygame, "CONTROLLER_BUTTON_A", 0),
+            getattr(pygame, "CONTROLLER_BUTTON_B", 1),
+            0, 1,
+        )
+        cpu = button in (getattr(pygame, "CONTROLLER_BUTTON_X", 2), 2)
+        if jump or cpu:
+            self._remember_edge(pid, jump=jump, cpu=cpu)
+
+    def _remember_edge(self, pid, x=None, y=None, jump=False, cpu=False):
+        slot = self.edges.get(pid)
+        if slot is None:
+            slot = {"x": 0.0, "y": 0.0, "jump": False, "cpu": False}
+            self.edges[pid] = slot
+        if x:
+            slot["x"] = float(x)
+        if y:
+            slot["y"] = float(y)
+        if jump:
+            slot["jump"] = True
+        if cpu:
+            slot["cpu"] = True
+
+    def _apply_edges(self):
+        for pad in list(self.pads.values()):
+            extra = self.edges.pop(pad.id, None)
+            if not extra:
+                continue
+            if extra["x"] and abs(pad.cur["x"]) < 0.5:
+                pad.prev["x"] = 0.0
+                pad.cur["x"] = extra["x"]
+            if extra["y"] and abs(pad.cur["y"]) < 0.5:
+                pad.prev["y"] = 0.0
+                pad.cur["y"] = extra["y"]
+            if extra.get("jump") and not pad.cur.get("jump"):
+                pad.prev["jump"] = False
+                pad.cur["jump"] = True
+            if extra.get("cpu") and not pad.cur.get("cpu"):
+                pad.prev["cpu"] = False
+                pad.cur["cpu"] = True
+        self.edges.clear()
+
+    def poll_pads(self):
+        ks = pygame.key.get_pressed()
+        pads = list(self.pads.values())
+        for player in self.players:
+            if player.pad not in pads:
+                pads.append(player.pad)
+        seen = set()
+        quitting = False
+        for pad in pads:
+            if id(pad) in seen:
+                continue
+            seen.add(id(pad))
+            pad.poll(ks)
+            if pad.held("start") and pad.held("back"):
+                quitting = True
+        self.quit_hold = self.quit_hold + 1 if quitting else 0
+
+    def drive(self):
+        if self.state == "lobby":
+            for pad in self.pads.values():
+                if not getattr(pad, "auto", False) or self.owner(pad) is not None:
+                    continue
+                des = blank()
+                if self.t == getattr(pad, "join_frame", 8):
+                    des["jump"] = True
+                pad.desired = des
+        for player in self.players:
+            bot = getattr(player.pad, "bot", None)
+            if bot is None:
+                continue
+            if not (self.autoplay or getattr(player.pad, "auto", False)):
+                continue
+            player.pad.desired = self._auto_desire(player, bot)
+
+    def _auto_desire(self, player, bot):
+        if self.state == "lobby":
+            des = blank()
+            if self.t == 40 and player.idx == 0 and len(self.players) >= 2:
+                des["start"] = True
+            return des
+        if self.state in ("ready", "play") and self.room is not None:
+            return bot.decide(player, self.room, self.players)
+        if self.state == "roundend" and self.t == 48 and player.idx == 0:
+            des = blank()
+            des["jump"] = True
+            return des
+        if self.state == "results" and self.t == 30 and player.idx == 0:
+            des = blank()
+            des["jump"] = True
+            return des
+        return blank()
+
+    def note(self, text, x, y, color):
+        self.notes.append([text, x, y, 46, color])
+        if len(self.notes) > 8:
+            del self.notes[0]
+
+    def _tick_notes(self):
+        kept = []
+        for item in self.notes:
+            item[2] -= 0.22
+            item[3] -= 1
+            if item[3] > 0:
+                kept.append(item)
+        self.notes = kept
+
+    def _tick_bits(self):
+        kept = []
+        for bit in self.bits:
+            bit[0] += bit[2]
+            bit[1] += bit[3]
+            bit[4] -= 1
+            if bit[4] > 0:
+                kept.append(bit)
+        self.bits = kept[-70:]
+
+    def puff(self, x, y, color, n=4, speed=0.4):
+        for i in range(n):
+            if len(self.bits) > 70:
+                self.bits.pop(0)
+            self.bits.append([
+                x + random.uniform(-3, 3), y,
+                random.uniform(-speed, speed), random.uniform(-0.7, -0.15),
+                random.randint(12, 26), color,
+            ])
+
+    def update(self):
+        self.poll_events()
+        self.drive()
+        self.poll_pads()
+        self._apply_edges()
+        self.t += 1
+        self.stats["frames"] += 1
+        self._tick_notes()
+        self._tick_bits()
+        if self.quit_hold >= 60:
+            self.running = False
+            return
+        self.grab_pads()
+        getattr(self, "up_" + self.state)()
+
+    def _controllers_connected(self):
+        return any(pad.kind in ("gc", "js") for pad in self.pads.values())
+
+    def _drop_keyboard_echo(self):
+        """A connected pad often also injects keyboard X, which would steal a slot."""
+        if not self._controllers_connected():
+            return
+        for player in list(self.players):
+            if player.pad.kind == "kb":
+                self.players.remove(player)
+        self.reindex()
+
+    def up_lobby(self):
+        self._drop_keyboard_echo()
+        if any(pad.pressed("cpu") for pad in list(self.pads.values())):
+            self.cycle_cpus()
+        for pad in list(self.pads.values()):
+            if pad.pressed("alt"):
+                self.menu_i = 0
+                self.goto("settings")
+                return
+            owned = self.owner(pad)
+            if owned is not None and not owned.cpu and pad.pressed("back"):
+                self.players.remove(owned)
+                self.reindex()
+                self.settings["cpus"] = len([p for p in self.players if p.cpu])
+                continue
+            if owned is None and pad.pressed("jump"):
+                if pad.kind == "kb" and self._controllers_connected():
+                    continue
+                self.add_player(pad)
+        humans = [p for p in self.players if not p.cpu]
+        if len(self.players) >= 2 and humans and any(p.pad.pressed("start") for p in humans):
+            self.begin_round()
+
+    def up_settings(self):
+        rows = self.setting_rows()
+        n = len(rows)
+        for pad in list(self.pads.values()):
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % n
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % n
+            if pad.cur["x"] > 0.5 and abs(pad.prev["x"]) <= 0.5:
+                self._tweak(rows[self.menu_i][0], 1)
+            elif pad.cur["x"] < -0.5 and abs(pad.prev["x"]) <= 0.5:
+                self._tweak(rows[self.menu_i][0], -1)
+            if pad.pressed("jump") and rows[self.menu_i][0] == "help":
+                self.legend_from = "settings"
+                self.goto("legend")
+                return
+            if pad.pressed("back") or pad.pressed("alt"):
+                self._close_settings()
+                return
+            if pad.pressed("jump"):
+                self._close_settings()
+                return
+
+    def up_legend(self):
+        for pad in self.pads.values():
+            if pad.pressed("jump") or pad.pressed("back") or pad.pressed("alt") or pad.pressed("start"):
+                self.goto(self.legend_from)
+                return
+
+    def up_ready(self):
+        self._ambience()
+        if self.t >= COUNTDOWN:
+            sfx("go")
+            self.go_flash = 28
+            self.goto("play")
+            self.up_play()
+
+    def up_play(self):
+        if self.go_flash:
+            self.go_flash -= 1
+        if self._wants_pause():
+            self.menu_i = 0
+            self.goto("paused")
+            return
+        self._simulate()
+        alive = [p for p in self.players if p.mode != "faint"]
+        if self.ending:
+            self.ending -= 1
+            if self.ending <= 0 or not alive:
+                self._finish_round()
+            return
+        if not alive:
+            self.stats["wipes"] += 1
+            self._finish_round()
+            return
+        elapsed = self.round_total - max(0, self.round_left)
+        early_at = min(MIN_FRAMES, int(self.round_total * 0.62))
+        if len(alive) == 1 and len(self.players) >= 2 and elapsed >= early_at:
+            alive[0].score += LAST_BONUS
+            alive[0].got_bonus = True
+            self.stats["early"] += 1
+            self.note(tr("last"), W / 2, 36, (255, 220, 140))
+            sfx("win")
+            self.ending = SOLO_HOLD
+            return
+        if self.round_left <= 0:
+            self._finish_round()
+
+    def up_paused(self):
+        for player in self.players:
+            pad = player.pad
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % 3
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] >= -0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % 3
+            if pad.pressed("back"):
+                self.goto("play")
+                return
+            if pad.pressed("jump") or pad.pressed("start"):
+                self._pause_pick()
+                return
+
+    def up_roundend(self):
+        if self.t > 24 and any(p.pad.pressed("jump") or p.pad.pressed("start") for p in self.players):
+            if self.round_no >= self.match_rounds:
+                self.goto("results")
+            else:
+                self.begin_round()
+
+    def up_results(self):
+        if any(p.pad.pressed("back") for p in self.players):
+            self._to_lobby()
+            return
+        if self.t > 16 and any(p.pad.pressed("jump") or p.pad.pressed("start") for p in self.players):
+            self._rematch()
+
+    def _wants_pause(self):
+        if self.autoplay or self.ending:
+            return False
+        for player in self.players:
+            pad = player.pad
+            if pad.pressed("start") and not pad.held("back"):
+                return True
+        return False
+
+    def _pause_pick(self):
+        if self.menu_i == 0:
+            self.goto("play")
+        elif self.menu_i == 1:
+            self._to_lobby()
+        else:
+            self.running = False
+
+    def _to_lobby(self):
+        for player in self.players:
+            player.bank = 0
+            player.wins = 0
+            player.faints = 0
+            player.score = 0
+        self.round_no = 0
+        self.room = None
+        self.notes = []
+        self.goto("lobby")
+
+    def _rematch(self):
+        for player in self.players:
+            player.bank = 0
+            player.wins = 0
+            player.faints = 0
+        self.round_no = 0
+        self.begin_round()
+
+    def setting_rows(self):
+        s = self.settings
+        return (
+            ("cpus", tr("set_cpu"), str(s["cpus"])),
+            ("difficulty", tr("set_diff"), tr("d_" + s["difficulty"])),
+            ("rounds", tr("set_rounds"), str(s["rounds"])),
+            ("round_secs", tr("set_length"), tr("secs", s["round_secs"])),
+            ("heat", tr("set_heat"), tr("h_" + s["heat"])),
+            ("pickups", tr("set_pick"), tr("p_" + s["pickups"])),
+            ("sfx_vol", tr("set_sfx"), str(s["sfx_vol"])),
+            ("music_vol", tr("set_music"), str(s["music_vol"])),
+            ("help", tr("set_help"), ""),
+        )
+
+    def _tweak(self, key, step):
+        if key == "help":
+            return
+        if key == "cpus":
+            free = 4 - len([p for p in self.players if not p.cpu])
+            options = tuple(range(max(0, free) + 1))
+        else:
+            options = CHOICES[key]
+        cur = self.settings[key]
+        idx = options.index(cur) if cur in options else 0
+        self.settings[key] = options[(idx + step) % len(options)]
+        if key in ("cpus", "difficulty"):
+            self.sync_cpus()
+        if key in ("sfx_vol", "music_vol"):
+            apply_volume(self.settings["sfx_vol"], self.settings["music_vol"])
+
+    def _close_settings(self):
+        self.sync_cpus()
+        save_settings(self.settings)
+        apply_volume(self.settings["sfx_vol"], self.settings["music_vol"])
+        self.goto("lobby")
+
+    def begin_round(self):
+        self.round_no += 1
+        self.match_rounds = int(self.settings["rounds"])
+        self.round_total = int(self.settings["round_secs"]) * FPS
+        every = int(PICKUP_SEC[self.settings["pickups"]]) * FPS
+        heat_mul = HEAT_MUL[self.settings["heat"]]
+        self.room = Room(self.rng, pickup_every=every, heat_mul=heat_mul)
+        self.round_left = self.round_total
+        self.ending = 0
+        self.go_flash = 0
+        self.round_winners = []
+        self.bits = []
+        self.notes = []
+        for i, player in enumerate(self.players):
+            player.reset_round("floor", SPOTS[i])
+        self.goto("ready")
+
+    def _simulate(self):
+        self.round_left -= 1
+        self.room.tick(self.players)
+        if self.room.announce:
+            self.note(tr(self.room.announce), W / 2, 30, (255, 244, 210))
+            self.stats[self.room.announce] = self.stats.get(self.room.announce, 0) + 1
+            self.room.announce = None
+        self.stats["gusts"] = self.room.gusts
+        self.stats["flares"] = self.room.flares
+        thrown = []
+        for player in self.players:
+            pad = player.pad
+            events = step_player(
+                player, pad.cur["x"], pad.cur["y"], pad.pressed("jump"), self.room,
+                pad.held("jump"),
+            )
+            if "exit" in events:
+                self.room.draft()
+                self.stats["exits"] += 1
+            if "avanto" in events:
+                self.stats["dips"] += 1
+                sfx("dip")
+                self.note(tr("avanto"), player.x, player.y - 26, (170, 220, 255))
+                self.puff(player.x, player.y - 8, (180, 220, 240), 5, 0.5)
+            if "loyly" in events:
+                thrown.append(player)
+            if "shut" in events:
+                self.stats["doors_shut"] = self.stats.get("doors_shut", 0) + 1
+            if "relight" in events:
+                self.stats["relights"] = self.stats.get("relights", 0) + 1
+                sfx("go")
+            if "olut" in events:
+                self.stats["beers"] = self.stats.get("beers", 0) + 1
+            if "olut" in events or "pyyhe" in events:
+                kind = "olut" if "olut" in events else "pyyhe"
+                self.stats["pickups"] += 1
+                sfx("drink")
+                self.note(tr(kind), player.x, player.y - 22, (255, 230, 160))
+            if "faint" in events:
+                self._on_faint(player)
+        for player in thrown:
+            throw_into(player, self.players, self.room)
+            self.stats["loyly"] += 1
+            sfx("loyly")
+            self.note(tr("loyly"), 250, 78, (255, 244, 220))
+            self.puff(296, 120, (230, 236, 240), 8, 0.55)
+        for player in self.players:
+            if try_faint(player):
+                self._on_faint(player)
+        separate(self.players)
+        self._ambience()
+
+    def _ambience(self):
+        if self.room is None:
+            return
+        rate = 2 if self.room.heat > 50 or self.room.loyly_t else 4
+        if self.t % rate == 0:
+            self.puff(296, 118, (236, 240, 244), 2, 0.35)
+        for player in self.players:
+            if player.mode == "faint" or player.heat < 58:
+                continue
+            if self.t % 14 == player.idx:
+                self.puff(player.x, player.y - 18, (200, 230, 255), 1, 0.2)
+
+    def _on_faint(self, player):
+        self.stats["faints"] += 1
+        sfx("faint")
+        self.note(tr("fainted"), player.x, player.y - 18, PCOLORS[player.idx][0])
+        self.puff(player.x, player.y - 10, (255, 220, 80), 4, 0.35)
+
+    def _finish_round(self):
+        for player in self.players:
+            player.round_points = int(player.score + 0.5)
+            player.bank += player.round_points
+            if player.mode == "faint":
+                player.faints += 1
+        self.notes = []
+        best = max(player.round_points for player in self.players) if self.players else 0
+        self.round_winners = [p for p in self.players if p.round_points == best and best > 0]
+        for player in self.round_winners:
+            player.wins += 1
+        self.stats["rounds_ended"] += 1
+        sfx("win")
+        self.ending = 0
+        self.goto("roundend")
+
+    def draw(self):
+        draw_frame(self)
+        self.screen.blit(self.canvas, (0, 0))
+
+# ---- main.py ----
+# Batocera: copy the built Saunakisa<version>.pygame to /userdata/roms/pygame/
+import json
+import os
+import sys
+import traceback
+
+import pygame
+
+
+
+def open_screen():
+    windowed = bool(os.environ.get("SAUNAKISA_WINDOWED"))
+    fast = bool(os.environ.get("SAUNAKISA_FRAMES") or os.environ.get("SAUNAKISA_AUTOPLAY"))
+    dummy = os.environ.get("SDL_VIDEODRIVER") == "dummy"
+    flags = 0 if dummy else pygame.SCALED
+    if not windowed and not dummy:
+        flags |= pygame.FULLSCREEN
+    vsync = 0 if fast or dummy else 1
+    try:
+        return pygame.display.set_mode((W, H), flags, vsync=vsync)
+    except TypeError:
+        try:
+            return pygame.display.set_mode((W, H), flags)
+        except pygame.error:
+            return pygame.display.set_mode((W, H))
+    except pygame.error:
+        return pygame.display.set_mode((W, H))
+
+
+def main():
+    try:
+        _main()
+    except SystemExit:
+        raise
+    except Exception:
+        write_crash(traceback.format_exc())
+        try:
+            pygame.quit()
+        except Exception:
+            pass
+        sys.exit(1)
+
+
+def _main():
+    os.environ.setdefault("SDL_GAMECONTROLLER_ALLOW_BACKGROUND_EVENTS", "1")
+    frames = int(os.environ.get("SAUNAKISA_FRAMES") or "0")
+    fast = bool(frames or os.environ.get("SAUNAKISA_AUTOPLAY"))
+    prepare_audio()
+    pygame.init()
+    start_audio()
+    try:
+        from pygame._sdl2 import controller
+        controller.init()
+    except Exception:
+        pass
+    screen = open_screen()
+    pygame.display.set_caption("SAUNAKISA")
+    pygame.mouse.set_visible(False)
+    game = Game(screen)
+    if os.environ.get("SAUNAKISA_AUTOPLAY"):
+        game.arm_autoplay(int(os.environ.get("SAUNAKISA_SEED") or "1"))
+    clock = pygame.time.Clock()
+    n = 0
+    while game.running:
+        game.update()
+        game.draw()
+        pygame.display.flip()
+        if not fast:
+            clock.tick(FPS)
+        n += 1
+        if frames and n >= frames:
+            break
+    if game.autoplay:
+        print("SAUNAKISA_STATS " + json.dumps(game.public_stats(), separators=(",", ":")))
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    main()

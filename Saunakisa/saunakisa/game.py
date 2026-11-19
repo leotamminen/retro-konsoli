@@ -250,6 +250,10 @@ class Game:
                 self._remember_edge("kb", y=-1)
             elif key in (pygame.K_DOWN, pygame.K_s):
                 self._remember_edge("kb", y=1)
+            elif key in (pygame.K_x, pygame.K_SPACE):
+                self._remember_edge("kb", jump=True)
+            elif key == pygame.K_q:
+                self._remember_edge("kb", cpu=True)
             return
         if kind == pygame.JOYHATMOTION:
             hx, hy = ev.value
@@ -261,22 +265,38 @@ class Game:
             return
         if kind not in (getattr(pygame, "CONTROLLERBUTTONDOWN", -1), pygame.JOYBUTTONDOWN):
             return
-        move = _dpad_move(getattr(ev, "button", None))
+        button = getattr(ev, "button", None)
         iid = getattr(ev, "instance_id", None)
-        if move is None or iid is None:
+        if iid is None:
             return
-        x, y = move
-        self._remember_edge("js%d" % int(iid), x=x or None, y=y or None)
+        pid = "js%d" % int(iid)
+        move = _dpad_move(button)
+        if move is not None:
+            x, y = move
+            self._remember_edge(pid, x=x or None, y=y or None)
+            return
+        jump = button in (
+            getattr(pygame, "CONTROLLER_BUTTON_A", 0),
+            getattr(pygame, "CONTROLLER_BUTTON_B", 1),
+            0, 1,
+        )
+        cpu = button in (getattr(pygame, "CONTROLLER_BUTTON_X", 2), 2)
+        if jump or cpu:
+            self._remember_edge(pid, jump=jump, cpu=cpu)
 
-    def _remember_edge(self, pid, x=None, y=None):
+    def _remember_edge(self, pid, x=None, y=None, jump=False, cpu=False):
         slot = self.edges.get(pid)
         if slot is None:
-            slot = {"x": 0.0, "y": 0.0}
+            slot = {"x": 0.0, "y": 0.0, "jump": False, "cpu": False}
             self.edges[pid] = slot
         if x:
             slot["x"] = float(x)
         if y:
             slot["y"] = float(y)
+        if jump:
+            slot["jump"] = True
+        if cpu:
+            slot["cpu"] = True
 
     def _apply_edges(self):
         for pad in list(self.pads.values()):
@@ -289,6 +309,12 @@ class Game:
             if extra["y"] and abs(pad.cur["y"]) < 0.5:
                 pad.prev["y"] = 0.0
                 pad.cur["y"] = extra["y"]
+            if extra.get("jump") and not pad.cur.get("jump"):
+                pad.prev["jump"] = False
+                pad.cur["jump"] = True
+            if extra.get("cpu") and not pad.cur.get("cpu"):
+                pad.prev["cpu"] = False
+                pad.cur["cpu"] = True
         self.edges.clear()
 
     def poll_pads(self):
@@ -392,8 +418,21 @@ class Game:
         self.grab_pads()
         getattr(self, "up_" + self.state)()
 
+    def _controllers_connected(self):
+        return any(pad.kind in ("gc", "js") for pad in self.pads.values())
+
+    def _drop_keyboard_echo(self):
+        """A connected pad often also injects keyboard X, which would steal a slot."""
+        if not self._controllers_connected():
+            return
+        for player in list(self.players):
+            if player.pad.kind == "kb":
+                self.players.remove(player)
+        self.reindex()
+
     def up_lobby(self):
-        if any(pad.pressed("cpu") for pad in self.pads.values()):
+        self._drop_keyboard_echo()
+        if any(pad.pressed("cpu") for pad in list(self.pads.values())):
             self.cycle_cpus()
         for pad in list(self.pads.values()):
             if pad.pressed("alt"):
@@ -407,6 +446,8 @@ class Game:
                 self.settings["cpus"] = len([p for p in self.players if p.cpu])
                 continue
             if owned is None and pad.pressed("jump"):
+                if pad.kind == "kb" and self._controllers_connected():
+                    continue
                 self.add_player(pad)
         humans = [p for p in self.players if not p.cpu]
         if len(self.players) >= 2 and humans and any(p.pad.pressed("start") for p in humans):
@@ -562,7 +603,11 @@ class Game:
         if key == "help":
             return
         from .settings import CHOICES
-        options = CHOICES[key]
+        if key == "cpus":
+            free = 4 - len([p for p in self.players if not p.cpu])
+            options = tuple(range(max(0, free) + 1))
+        else:
+            options = CHOICES[key]
         cur = self.settings[key]
         idx = options.index(cur) if cur in options else 0
         self.settings[key] = options[(idx + step) % len(options)]
@@ -597,6 +642,10 @@ class Game:
     def _simulate(self):
         self.round_left -= 1
         self.room.tick(self.players)
+        if self.room.announce:
+            self.note(tr(self.room.announce), W / 2, 30, (255, 244, 210))
+            self.stats[self.room.announce] = self.stats.get(self.room.announce, 0) + 1
+            self.room.announce = None
         self.stats["gusts"] = self.room.gusts
         self.stats["flares"] = self.room.flares
         thrown = []
@@ -604,6 +653,7 @@ class Game:
             pad = player.pad
             events = step_player(
                 player, pad.cur["x"], pad.cur["y"], pad.pressed("jump"), self.room,
+                pad.held("jump"),
             )
             if "exit" in events:
                 self.room.draft()
@@ -615,6 +665,13 @@ class Game:
                 self.puff(player.x, player.y - 8, (180, 220, 240), 5, 0.5)
             if "loyly" in events:
                 thrown.append(player)
+            if "shut" in events:
+                self.stats["doors_shut"] = self.stats.get("doors_shut", 0) + 1
+            if "relight" in events:
+                self.stats["relights"] = self.stats.get("relights", 0) + 1
+                sfx("go")
+            if "olut" in events:
+                self.stats["beers"] = self.stats.get("beers", 0) + 1
             if "olut" in events or "pyyhe" in events:
                 kind = "olut" if "olut" in events else "pyyhe"
                 self.stats["pickups"] += 1

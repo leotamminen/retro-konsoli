@@ -25,7 +25,7 @@ CHOICES = {
 }
 
 HEAT_MUL = {"hidas": 0.75, "normaali": 1.0, "nopea": 1.25}
-PICKUP_SEC = {"harvoin": 18, "normaali": 11, "usein": 6}
+PICKUP_SEC = {"harvoin": 14, "normaali": 8, "usein": 5}
 
 
 def game_dir():

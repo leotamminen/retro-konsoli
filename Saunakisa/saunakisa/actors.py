@@ -1,8 +1,9 @@
 # Bathers, benches, and the little choices that cook you.
 from .const import (
-    ACCEL, BODY, CLIMB_SPEED, FAINT_KEEP, FPS, HEAT_MAX, HEAT_RATE,
-    INSIDE, LOYLY_CD, LOYLY_OTHER, LOYLY_ROOM, LOYLY_SELF, OLUT_COOL, ORDER,
-    PLACES, POINT_RATE, ROOM_MULT0, ROOM_MULT1, START_HEAT, STOVE_X,
+    ACCEL, BEER_CAP, BEER_MUL, BEER_TIME, BODY, CLIMB_SPEED, DOOR_POINT,
+    DOOR_ZONE_X, FAINT_KEEP, FPS, HEAT_MAX, HEAT_RATE, INSIDE, KIUAS_POINT,
+    LOYLY_CD, LOYLY_OTHER, LOYLY_ROOM, LOYLY_SELF, OLUT_COOL, ORDER, PLACES,
+    POINT_RATE, RELIGHT_HOLD, ROOM_MULT0, ROOM_MULT1, START_HEAT, STOVE_X,
     TOWEL_COOL, TOWEL_TIME, WALK,
 )
 from .input import blank
@@ -41,6 +42,9 @@ class Player:
         self.round_points = 0
         self.cool_t = 0
         self.loyly_cd = 0
+        self.beers = 0
+        self.beer_t = 0
+        self.relight = 0
         self.climb_to = "floor"
         self.climb_t = 0
         self.climb_dur = 1
@@ -61,9 +65,16 @@ class Player:
         self.round_points = 0
         self.cool_t = 0
         self.loyly_cd = 0
+        self.beers = 0
+        self.beer_t = 0
+        self.relight = 0
         self.climb_t = 0
         self.got_bonus = False
         self.anim = 0
+        self.mode = "move"
+        bot = getattr(self.pad, "bot", None)
+        if bot is not None:
+            bot.reset()
 
     @property
     def inside(self):
@@ -103,13 +114,15 @@ def _arrive(player):
     player.vx = 0.0
 
 
-def step_player(player, ix, iy, act, room):
+def step_player(player, ix, iy, act, room, held=False):
     """One frame of feet, heat and points. Returns a list of event names."""
     events = []
     if player.loyly_cd:
         player.loyly_cd -= 1
     if player.cool_t:
         player.cool_t -= 1
+    if player.beer_t:
+        player.beer_t -= 1
     if player.mode == "faint":
         player.anim += 1
         return events
@@ -168,12 +181,31 @@ def step_player(player, ix, iy, act, room):
         near_ladder = spec["climb_x"] is not None and abs(player.x - spec["climb_x"]) <= 11
         if not moved and near_ladder:
             if iy < -0.5 and spec["up"]:
-                _start_climb(player, spec["up"])
+                if spec["up"] == "high" and player.beers >= BEER_CAP:
+                    player.relight = 0
+                else:
+                    _start_climb(player, spec["up"])
             elif iy > 0.5 and spec["down"]:
                 _start_climb(player, spec["down"])
 
-    if act and player.mode == "move" and player.place == "floor" and player.x >= STOVE_X and player.loyly_cd <= 0:
-        events.append("loyly")
+    if player.mode == "move" and player.place == "floor":
+        if room.door_t > 0 and player.x <= PLACES["floor"]["x0"] + 24 and (act or held):
+            room.door_t = 0
+            events.append("shut")
+        elif not room.kiuas_on and player.x >= STOVE_X:
+            if held or act:
+                player.relight += 1
+                if player.relight >= RELIGHT_HOLD:
+                    room.kiuas_on = True
+                    player.relight = 0
+                    events.append("relight")
+            else:
+                player.relight = 0
+        elif act and player.x >= STOVE_X and player.loyly_cd <= 0 and room.kiuas_on:
+            events.append("loyly")
+            player.relight = 0
+        else:
+            player.relight = 0
 
     _apply_body(player, room)
     if room.item is not None and player.mode == "move" and player.place == room.item.place:
@@ -195,6 +227,8 @@ def _apply_body(player, room):
     rate = heat_rate(place, room.heat)
     if rate > 0:
         rate *= getattr(room, "heat_mul", 1.0)
+        if not getattr(room, "kiuas_on", True):
+            rate *= 0.35
     if player.cool_t > 0 and rate > 0:
         rate *= 0.5
     player.heat += rate / FPS
@@ -202,7 +236,19 @@ def _apply_body(player, room):
         player.heat = 0.0
     elif player.heat > HEAT_MAX:
         player.heat = HEAT_MAX
+    if player.beer_t > 0:
+        points *= BEER_MUL
+    if getattr(room, "door_t", 0) > 0 and _by_door(player):
+        points *= DOOR_POINT
+    if not getattr(room, "kiuas_on", True):
+        points *= KIUAS_POINT
     player.score += points / FPS
+
+
+def _by_door(player):
+    if player.place in ("porch", "avanto"):
+        return True
+    return player.place == "floor" and player.x < DOOR_ZONE_X
 
 
 def throw_into(thrower, players, room):
@@ -222,6 +268,8 @@ def _take(player, room):
     kind = room.item.kind
     if kind == "olut":
         player.heat = max(0.0, player.heat - OLUT_COOL)
+        player.beers += 1
+        player.beer_t = BEER_TIME
     else:
         player.heat = max(0.0, player.heat - TOWEL_COOL)
         player.cool_t = TOWEL_TIME
@@ -241,6 +289,9 @@ def try_faint(player):
     player.score *= FAINT_KEEP
     if player.score < 0:
         player.score = 0.0
+    bot = getattr(player.pad, "bot", None)
+    if bot is not None:
+        bot.reset()
     return True
 
 
@@ -289,10 +340,10 @@ DIFFICULTY = {
     # Around 76 heat is the exit that still scores. Easy overstays. Hard hits that exit and snipes the leader.
     # Vaikea leaves on time and only throws a killing löyly when already cool.
     # A hot throw used to cook Vaikea itself, so Normaali outscored it.
-    "helppo": {"leave": 91, "back": 24, "jitter": 8, "mistake": 0.32, "throw_heat": 96, "lead": 80, "self_max": 80, "react": 28, "item_at": 66, "item_p": 0.25},
-    "normaali": {"leave": 78, "back": 30, "jitter": 6, "mistake": 0.10, "throw_heat": 80, "lead": 36, "self_max": 62, "react": 12, "item_at": 44, "item_p": 0.72},
+    "helppo": {"leave": 96, "back": 20, "jitter": 4, "mistake": 0.55, "throw_heat": 99, "lead": 120, "self_max": 90, "react": 36, "item_at": 90, "item_p": 0.05},
+    "normaali": {"leave": 81, "back": 30, "jitter": 8, "mistake": 0.16, "throw_heat": 84, "lead": 40, "self_max": 64, "react": 14, "item_at": 48, "item_p": 0.6},
     "vaikea": {"leave": 79, "back": 30, "jitter": 0, "mistake": 0.0, "throw_heat": 83, "lead": 10, "self_max": 52, "solo_throw": True, "react": 1, "item_at": 55, "item_p": 0.35},
-    "ihminen": {"leave": 77, "back": 30, "jitter": 5, "mistake": 0.09, "throw_heat": 82, "lead": 28, "self_max": 60, "react": 10, "item_at": 44, "item_p": 0.75},
+    "ihminen": {"leave": 77, "back": 30, "jitter": 5, "mistake": 0.09, "throw_heat": 82, "lead": 28, "self_max": 60, "react": 10, "item_at": 32, "item_p": 0.9},
 }
 
 
@@ -310,6 +361,14 @@ class Bot:
         self.command = "idle"
         self._roll_leave()
 
+    def reset(self):
+        """Clear a faint or a finished round so the next round is a fresh plan."""
+        self.plan = "bench"
+        self.lock = 0
+        self.notice = 0
+        self.command = "idle"
+        self._roll_leave()
+
     def _roll_leave(self):
         jitter = self.profile["jitter"]
         self.leave_line = self.profile["leave"] + self.rng.randint(-jitter, jitter)
@@ -319,13 +378,18 @@ class Bot:
         self.command = "idle"
         if player.mode == "faint":
             return des
+        if self._crisis(player, room, players, des):
+            return des
         self._plan(player, room, players)
         if self.plan == "cool":
             self._toward(player, "avanto", bench_x(player, "avanto"), des)
         elif self.plan == "throw":
             stove = min(PLACES["floor"]["x1"] - 4, STOVE_X + 8 + player.idx * 5)
             self._toward(player, "floor", stove, des)
-            if player.mode == "move" and player.place == "floor" and player.x >= STOVE_X and player.loyly_cd <= 0:
+            if (
+                player.mode == "move" and player.place == "floor" and player.x >= STOVE_X
+                and player.loyly_cd <= 0 and getattr(room, "kiuas_on", True)
+            ):
                 des["jump"] = True
                 self.plan = "bench"
                 self._roll_leave()
@@ -334,7 +398,8 @@ class Bot:
             self._toward(player, room.item.place, room.item.x, des)
         else:
             self.plan = "bench"
-            self._toward(player, "high", bench_x(player, "high"), des)
+            goal = "mid" if player.beers >= BEER_CAP else "high"
+            self._toward(player, goal, bench_x(player, goal), des)
         if des["x"] or des["y"] or des["jump"]:
             if self.command != "act":
                 self.command = "move" if (des["x"] or des["y"]) else "act"
@@ -371,11 +436,58 @@ class Bot:
         if player.heat > self.leave_line - 12 and self.rng.random() < profile["mistake"]:
             self.lock = 45 + self.rng.randint(0, 50)
             return
-        if self._wants_throw(player, players):
+        if self._wants_throw(player, players) and getattr(room, "kiuas_on", True):
             self.plan = "throw"
             return
-        if room.item is not None and player.heat >= profile["item_at"] and self.rng.random() < profile["item_p"]:
+        if self._wants_item(player, room):
             self.plan = "item"
+
+    def _crisis(self, player, room, players, des):
+        if getattr(room, "door_t", 0) > 0 and player.mode == "move":
+            if player.place == "floor" and player.x <= PLACES["floor"]["x0"] + 26:
+                des["jump"] = True
+                self.command = "act"
+                return True
+            if player.place in ("porch", "avanto"):
+                self._toward(player, "floor", 210, des)
+                self.command = "move"
+                return True
+        if not getattr(room, "kiuas_on", True):
+            if self._should_light(player, players):
+                if player.place == "floor" and player.x >= STOVE_X:
+                    des["jump"] = True
+                    self.command = "act"
+                else:
+                    stove = min(PLACES["floor"]["x1"] - 4, STOVE_X + 10)
+                    self._toward(player, "floor", stove, des)
+                    self.command = "move"
+                return True
+        return False
+
+    def _should_light(self, player, players):
+        if player.place == "floor" and player.x >= STOVE_X:
+            return True
+        pool = [p for p in players if p.mode != "faint" and p.heat < 72]
+        if not pool:
+            pool = [p for p in players if p.mode != "faint"]
+        if not pool:
+            return False
+        hero = min(pool, key=lambda p: p.idx)
+        return hero is player
+
+    def _wants_item(self, player, room):
+        item = room.item
+        if item is None:
+            return False
+        if item.kind == "olut":
+            if player.beers >= BEER_CAP:
+                return False
+            # The third beer locks you off the top bench. Only the sloppy bot drinks it.
+            if player.beers >= BEER_CAP - 1 and self.name != "helppo":
+                return False
+        if player.heat < self.profile["item_at"] and not (item.kind == "olut" and player.beers < 2 and player.heat > 28):
+            return False
+        return self.rng.random() < self.profile["item_p"]
 
     def _wants_throw(self, player, players):
         profile = self.profile

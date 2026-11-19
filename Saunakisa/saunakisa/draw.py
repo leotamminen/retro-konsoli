@@ -3,7 +3,7 @@ import math
 
 import pygame
 
-from .const import FPS, H, PCOLORS, PH, PLACES, PW, W
+from .const import BEER_TIME, FPS, H, PCOLORS, PH, PLACES, PW, W
 from .font import blit
 from .text import label, pname, tr
 
@@ -126,6 +126,13 @@ def draw_world(g):
     for player in order:
         draw_player(c, player, g.t)
     _soak(c, g.t)
+    if g.room is not None and g.room.door_t:
+        pygame.draw.rect(c, (186, 214, 230), (100, 118, 10, 36))
+        blit(c, _font(g), tr("door_msg"), 70, 20, (220, 240, 255), 1, center=True)
+        blit(c, _font(g), tr("shut_hint"), 70, 34, (255, 244, 220), 1, center=True)
+    elif g.room is not None and not g.room.kiuas_on:
+        blit(c, _font(g), tr("kiuas_msg"), 250, 20, (255, 180, 120), 1, center=True)
+        blit(c, _font(g), tr("light_hint"), 250, 34, (255, 236, 200), 1, center=True)
     if any(p.place in ("porch", "avanto") and p.mode != "faint" for p in g.players):
         pygame.draw.rect(c, WOOD_LT, (100, 116, 4, 28))
     _hud(g)
@@ -140,6 +147,9 @@ def _soak(c, t):
 
 
 def _fire(c, g):
+    if g.room is not None and not g.room.kiuas_on:
+        pygame.draw.rect(c, (20, 18, 22), (286, 132, 18, 16))
+        return
     heat = 22 if g.room is None else g.room.heat
     glow = heat / 100.0
     if g.room is not None and g.room.loyly_t:
@@ -198,6 +208,8 @@ def draw_player(c, player, t, at=None):
         _fainted(c, x, feet, skin, col, edge, t, player.idx)
         _meter(c, x, feet - PH, 1.0)
         return
+    if player.beers >= 3:
+        x += int(math.sin(t * 0.7 + player.idx) * 2)
     bob = 0
     if abs(player.vx) > 0.2 and player.mode == "move":
         bob = 1 if (player.anim // 4) % 2 == 0 else 0
@@ -206,6 +218,7 @@ def draw_player(c, player, t, at=None):
     else:
         _body(c, x, y - bob, skin, col, edge, heat, t, player, bob, water=False)
     _meter(c, x, y - bob, heat)
+    _beer(c, x, y, player)
 
 
 def _body(c, x, y, skin, col, edge, heat, t, player, bob, water):
@@ -246,6 +259,18 @@ def _fainted(c, x, feet, skin, col, edge, t, idx):
         sx = x + 4 + i * 5
         sy = y - 5 + int(math.sin(t * 0.25 + i + idx) * 2)
         pygame.draw.rect(c, (255, 220, 80), (sx, sy, 2, 2))
+
+
+def _beer(c, x, y, player):
+    if player.beers <= 0 and player.beer_t <= 0:
+        return
+    for i in range(min(3, player.beers)):
+        pygame.draw.rect(c, (150, 90, 30), (x + i * 4, y - 8, 3, 4))
+        pygame.draw.rect(c, (240, 220, 160), (x + i * 4, y - 9, 3, 2))
+    if player.beer_t > 0:
+        w = max(1, int(PW * player.beer_t / float(BEER_TIME)))
+        pygame.draw.rect(c, (40, 24, 12), (x, y - 4, PW, 2))
+        pygame.draw.rect(c, (255, 196, 60), (x, y - 4, w, 2))
 
 
 def _meter(c, x, y, heat):
