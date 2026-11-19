@@ -38,6 +38,28 @@ def game_dir():
     return here
 
 
+def crash_log_path():
+    override = os.environ.get("SAUNAKISA_CRASH_LOG")
+    if override:
+        return override
+    return os.path.join(game_dir(), "saunakisa_crash.log")
+
+
+def write_crash(text):
+    path = crash_log_path()
+    try:
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            if text and not text.endswith("\n"):
+                fh.write("\n")
+        return path
+    except Exception:
+        return None
+
+
 def settings_path():
     override = os.environ.get("SAUNAKISA_SETTINGS")
     if override:

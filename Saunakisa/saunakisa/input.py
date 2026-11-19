@@ -6,6 +6,16 @@
 import pygame
 
 
+def _safe_button(dev, name):
+    idx = getattr(pygame, name, None)
+    if idx is None or idx < 0:
+        return False
+    try:
+        return bool(dev.get_button(idx))
+    except Exception:
+        return False
+
+
 def blank():
     return {"x": 0.0, "y": 0.0, "jump": False, "start": False, "back": False, "alt": False, "cpu": False}
 
@@ -55,13 +65,13 @@ class Pad:
                 g = self.dev
                 ax = g.get_axis(pygame.CONTROLLER_AXIS_LEFTX) / 32768.0
                 ay = g.get_axis(pygame.CONTROLLER_AXIS_LEFTY) / 32768.0
-                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_LEFT):
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_LEFT"):
                     ax = -1.0
-                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_RIGHT):
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_RIGHT"):
                     ax = 1.0
-                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_UP):
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_UP"):
                     ay = -1.0
-                if g.get_button(pygame.CONTROLLER_BUTTON_DPAD_DOWN):
+                if _safe_button(g, "CONTROLLER_BUTTON_DPAD_DOWN"):
                     ay = 1.0
                 c["x"], c["y"] = ax, ay
                 c["jump"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_A) or g.get_button(pygame.CONTROLLER_BUTTON_B))

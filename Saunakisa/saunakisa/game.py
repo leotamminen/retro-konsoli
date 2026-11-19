@@ -18,6 +18,21 @@ from .world import Room
 SPOTS = (148, 178, 208, 236)
 
 
+def _dpad_move(button):
+    if button is None:
+        return None
+    pairs = (
+        ("CONTROLLER_BUTTON_DPAD_LEFT", (-1, 0)),
+        ("CONTROLLER_BUTTON_DPAD_RIGHT", (1, 0)),
+        ("CONTROLLER_BUTTON_DPAD_UP", (0, -1)),
+        ("CONTROLLER_BUTTON_DPAD_DOWN", (0, 1)),
+    )
+    for name, move in pairs:
+        if button == getattr(pygame, name, None):
+            return move
+    return None
+
+
 class Game:
     def __init__(self, screen):
         self.screen = screen
@@ -51,6 +66,7 @@ class Game:
         self.rng = random.Random(1)
         self.bits = []
         self.notes = []
+        self.edges = {}
         self.stats = {
             "frames": 0, "faints": 0, "loyly": 0, "dips": 0, "pickups": 0,
             "exits": 0, "gusts": 0, "flares": 0, "rounds_ended": 0,
@@ -218,6 +234,62 @@ class Game:
                 self.handle_device(ev)
             elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                 self.running = False
+            else:
+                self._note_edge(ev)
+
+    def _note_edge(self, ev):
+        """D-pad and arrows often arrive only as events, not as a held axis."""
+        kind = ev.type
+        if kind == pygame.KEYDOWN:
+            key = getattr(ev, "key", None)
+            if key in (pygame.K_LEFT, pygame.K_a):
+                self._remember_edge("kb", x=-1)
+            elif key in (pygame.K_RIGHT, pygame.K_d):
+                self._remember_edge("kb", x=1)
+            elif key in (pygame.K_UP, pygame.K_w):
+                self._remember_edge("kb", y=-1)
+            elif key in (pygame.K_DOWN, pygame.K_s):
+                self._remember_edge("kb", y=1)
+            return
+        if kind == pygame.JOYHATMOTION:
+            hx, hy = ev.value
+            self._remember_edge(
+                "js%d" % ev.instance_id,
+                x=hx or None,
+                y=(-hy if hy else None),
+            )
+            return
+        if kind not in (getattr(pygame, "CONTROLLERBUTTONDOWN", -1), pygame.JOYBUTTONDOWN):
+            return
+        move = _dpad_move(getattr(ev, "button", None))
+        iid = getattr(ev, "instance_id", None)
+        if move is None or iid is None:
+            return
+        x, y = move
+        self._remember_edge("js%d" % int(iid), x=x or None, y=y or None)
+
+    def _remember_edge(self, pid, x=None, y=None):
+        slot = self.edges.get(pid)
+        if slot is None:
+            slot = {"x": 0.0, "y": 0.0}
+            self.edges[pid] = slot
+        if x:
+            slot["x"] = float(x)
+        if y:
+            slot["y"] = float(y)
+
+    def _apply_edges(self):
+        for pad in list(self.pads.values()):
+            extra = self.edges.pop(pad.id, None)
+            if not extra:
+                continue
+            if extra["x"] and abs(pad.cur["x"]) < 0.5:
+                pad.prev["x"] = 0.0
+                pad.cur["x"] = extra["x"]
+            if extra["y"] and abs(pad.cur["y"]) < 0.5:
+                pad.prev["y"] = 0.0
+                pad.cur["y"] = extra["y"]
+        self.edges.clear()
 
     def poll_pads(self):
         ks = pygame.key.get_pressed()
@@ -309,6 +381,7 @@ class Game:
         self.poll_events()
         self.drive()
         self.poll_pads()
+        self._apply_edges()
         self.t += 1
         self.stats["frames"] += 1
         self._tick_notes()
@@ -342,7 +415,7 @@ class Game:
     def up_settings(self):
         rows = self.setting_rows()
         n = len(rows)
-        for pad in self.pads.values():
+        for pad in list(self.pads.values()):
             if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
                 self.menu_i = (self.menu_i - 1) % n
             elif pad.cur["y"] > 0.5 and pad.prev["y"] <= 0.5:

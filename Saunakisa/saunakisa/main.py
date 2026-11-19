@@ -1,12 +1,15 @@
 # Batocera: copy the built Saunakisa<version>.pygame to /userdata/roms/pygame/
 import json
 import os
+import sys
+import traceback
 
 import pygame
 
 from .audio import prepare_audio, start_audio
 from .const import FPS, H, W
 from .game import Game
+from .settings import write_crash
 
 
 def open_screen():
@@ -29,6 +32,20 @@ def open_screen():
 
 
 def main():
+    try:
+        _main()
+    except SystemExit:
+        raise
+    except Exception:
+        write_crash(traceback.format_exc())
+        try:
+            pygame.quit()
+        except Exception:
+            pass
+        sys.exit(1)
+
+
+def _main():
     os.environ.setdefault("SDL_GAMECONTROLLER_ALLOW_BACKGROUND_EVENTS", "1")
     frames = int(os.environ.get("SAUNAKISA_FRAMES") or "0")
     fast = bool(frames or os.environ.get("SAUNAKISA_AUTOPLAY"))

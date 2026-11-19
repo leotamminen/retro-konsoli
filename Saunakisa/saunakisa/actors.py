@@ -287,10 +287,12 @@ def bench_x(player, place):
 
 DIFFICULTY = {
     # Around 76 heat is the exit that still scores. Easy overstays. Hard hits that exit and snipes the leader.
-    "helppo": {"leave": 90, "back": 24, "jitter": 8, "mistake": 0.30, "throw_heat": 92, "lead": 90, "react": 26, "item_at": 64, "item_p": 0.3},
-    "normaali": {"leave": 78, "back": 30, "jitter": 6, "mistake": 0.10, "throw_heat": 72, "lead": 40, "react": 12, "item_at": 44, "item_p": 0.75},
-    "vaikea": {"leave": 74, "back": 32, "jitter": 2, "mistake": 0.02, "throw_heat": 64, "lead": 16, "react": 4, "item_at": 34, "item_p": 0.95},
-    "ihminen": {"leave": 76, "back": 30, "jitter": 5, "mistake": 0.09, "throw_heat": 70, "lead": 32, "react": 10, "item_at": 42, "item_p": 0.8},
+    # Vaikea leaves on time and only throws a killing löyly when already cool.
+    # A hot throw used to cook Vaikea itself, so Normaali outscored it.
+    "helppo": {"leave": 91, "back": 24, "jitter": 8, "mistake": 0.32, "throw_heat": 96, "lead": 80, "self_max": 80, "react": 28, "item_at": 66, "item_p": 0.25},
+    "normaali": {"leave": 78, "back": 30, "jitter": 6, "mistake": 0.10, "throw_heat": 80, "lead": 36, "self_max": 62, "react": 12, "item_at": 44, "item_p": 0.72},
+    "vaikea": {"leave": 79, "back": 30, "jitter": 0, "mistake": 0.0, "throw_heat": 83, "lead": 10, "self_max": 52, "solo_throw": True, "react": 1, "item_at": 55, "item_p": 0.35},
+    "ihminen": {"leave": 77, "back": 30, "jitter": 5, "mistake": 0.09, "throw_heat": 82, "lead": 28, "self_max": 60, "react": 10, "item_at": 44, "item_p": 0.75},
 }
 
 
@@ -376,17 +378,22 @@ class Bot:
             self.plan = "item"
 
     def _wants_throw(self, player, players):
-        if player.loyly_cd > 0 or player.heat > self.leave_line - 12:
+        profile = self.profile
+        if player.loyly_cd > 0 or player.heat > profile.get("self_max", self.leave_line - 18):
             return False
-        hot = self.profile["throw_heat"]
-        lead = self.profile["lead"]
+        if profile.get("solo_throw"):
+            recent = LOYLY_CD - 50
+            for other in players:
+                if other is not player and other.loyly_cd > recent:
+                    return False
+        hot = profile["throw_heat"]
+        lead = profile["lead"]
         for other in players:
             if other is player or other.mode == "faint" or not other.inside:
                 continue
-            ahead = other.score >= player.score + lead
-            if other.heat >= 88:
-                return True
-            if ahead and other.heat >= hot:
+            if other.score < player.score + lead:
+                continue
+            if other.heat >= hot:
                 return True
         return False
 

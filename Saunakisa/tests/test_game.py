@@ -9,11 +9,12 @@ os.environ.setdefault("SAUNAKISA_NO_SFX", "1")
 os.environ.setdefault("SAUNAKISA_NO_MUSIC", "1")
 os.environ.setdefault("SAUNAKISA_WINDOWED", "1")
 os.environ["SAUNAKISA_SETTINGS"] = "/tmp/saunakisa-test-settings.json"
+os.environ["SAUNAKISA_CRASH_LOG"] = "/tmp/saunakisa-test-crash.log"
 
 import pygame
 
 from saunakisa.actors import Bot, Player, heat_rate, step_player, throw_into, try_faint
-from saunakisa.settings import load_settings, save_settings, sanitize_settings
+from saunakisa.settings import load_settings, save_settings, sanitize_settings, write_crash
 from saunakisa.const import (
     FPS, HEAT_MAX, HEAT_RATE, MIN_FRAMES, PLACES, POINT_RATE, ROUND_FRAMES, STOVE_X,
 )
@@ -71,7 +72,7 @@ class Tests(unittest.TestCase):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "version.json"), encoding="utf-8") as fh:
             version = json.loads(fh.read())["version"]
-        self.assertEqual(version, "0.2")
+        self.assertEqual(version, "0.2.1")
         self.assertEqual(load_version(), version)
         quoted = '"%s"' % version
         squoted = "'%s'" % version
@@ -286,6 +287,137 @@ class Tests(unittest.TestCase):
         pad.desired["start"] = True
         game.update()
         self.assertEqual(game.state, "ready")
+
+    def _fresh(self):
+        pygame.event.clear()
+        screen = pygame.display.get_surface() or pygame.display.set_mode((320, 180))
+        game = Game(screen)
+        game.state = "settings"
+        game.menu_i = 0
+        return game
+
+    def _tap(self, game, event):
+        pygame.event.post(event)
+        game.update()
+
+    def _key(self, game, key):
+        self._tap(game, pygame.event.Event(pygame.KEYDOWN, key=key))
+        pygame.event.post(pygame.event.Event(pygame.KEYUP, key=key))
+        game.update()
+
+    def test_cpu_row_arrow_does_not_crash_and_wraps(self):
+        game = self._fresh()
+        self.assertEqual(game.settings["cpus"], 0)
+        self._key(game, pygame.K_RIGHT)
+        self.assertEqual(game.state, "settings")
+        self.assertEqual(game.settings["cpus"], 1)
+        self.assertEqual(sum(p.cpu for p in game.players), 1)
+        self._key(game, pygame.K_LEFT)
+        self.assertEqual(game.settings["cpus"], 0)
+        self._key(game, pygame.K_LEFT)
+        self.assertEqual(game.settings["cpus"], 3)
+        self._key(game, pygame.K_RIGHT)
+        self.assertEqual(game.settings["cpus"], 0)
+
+    def test_every_settings_row_from_the_event_queue(self):
+        for n_pads in range(5):
+            sources = ("key",) if n_pads == 0 else ("key", "hat", "button")
+            for source in sources:
+                game = self._fresh()
+                pads = []
+                for i in range(n_pads):
+                    dev = _QuietStick()
+                    pad = __import__("saunakisa.input", fromlist=["Pad"]).Pad("js", dev, iid=20 + i)
+                    game.pads[pad.id] = pad
+                    pads.append(pad)
+                self._walk_rows(game, source, pads[0].id if pads else "kb")
+                self._start_from_here(game)
+
+    def _walk_rows(self, game, source, pad_id):
+        original = dict(game.settings)
+        rows = game.setting_rows()
+        for index in range(len(rows)):
+            game.state = "settings"
+            game.menu_i = 0
+            for _ in range(index):
+                self._menu(game, source, pad_id, "down")
+            self.assertEqual(game.menu_i, index)
+            key = rows[index][0]
+            before = game.settings.get(key)
+            self._menu(game, source, pad_id, "right")
+            self._menu(game, source, pad_id, "left")
+            self._menu(game, source, pad_id, "left")
+            self._menu(game, source, pad_id, "right")
+            if key == "help":
+                self.assertEqual(game.settings.get(key, None), before)
+            else:
+                self.assertEqual(game.settings[key], original[key])
+            self.assertEqual(game.state, "settings")
+
+    def _menu(self, game, source, pad_id, way):
+        if source == "key":
+            key = {"left": pygame.K_LEFT, "right": pygame.K_RIGHT, "down": pygame.K_DOWN, "up": pygame.K_UP}[way]
+            self._key(game, key)
+            return
+        if source == "hat":
+            value = {"left": (-1, 0), "right": (1, 0), "down": (0, -1), "up": (0, 1)}[way]
+            iid = int(pad_id[2:])
+            self._tap(game, pygame.event.Event(pygame.JOYHATMOTION, instance_id=iid, hat=0, value=value))
+            return
+        button = {
+            "left": pygame.CONTROLLER_BUTTON_DPAD_LEFT,
+            "right": pygame.CONTROLLER_BUTTON_DPAD_RIGHT,
+            "down": pygame.CONTROLLER_BUTTON_DPAD_DOWN,
+            "up": pygame.CONTROLLER_BUTTON_DPAD_UP,
+        }[way]
+        iid = int(pad_id[2:])
+        self._tap(game, pygame.event.Event(
+            pygame.CONTROLLERBUTTONDOWN, instance_id=iid, button=button,
+        ))
+
+    def _start_from_here(self, game):
+        game.state = "lobby"
+        game.settings["cpus"] = min(3, int(game.settings["cpus"]))
+        game.sync_cpus()
+        if not any(not p.cpu for p in game.players):
+            pad = ScriptPad("starter")
+            game.pads[pad.id] = pad
+            game.add_player(pad)
+        if len(game.players) < 2:
+            game.settings["cpus"] = 1
+            game.sync_cpus()
+        game.begin_round()
+        for _ in range(4):
+            game.update()
+        self.assertIn(game.state, ("ready", "play"))
+        for player in game.players:
+            self.assertGreaterEqual(player.x, 0)
+
+    def test_crash_log_is_written(self):
+        path = write_crash("boom\n")
+        self.assertEqual(path, os.environ["SAUNAKISA_CRASH_LOG"])
+        with open(path, encoding="utf-8") as fh:
+            self.assertIn("boom", fh.read())
+
+
+class _QuietStick:
+    def get_numaxes(self):
+        return 2
+
+    def get_axis(self, i):
+        return 0.0
+
+    def get_numhats(self):
+        return 1
+
+    def get_hat(self, i):
+        return (0, 0)
+
+    def get_numbuttons(self):
+        return 16
+
+    def get_button(self, i):
+        return 0
 
 
 if __name__ == "__main__":
