@@ -26,6 +26,7 @@ class Player:
     def __init__(self, idx, pad):
         self.idx = idx
         self.pad = pad
+        self.cpu = False
         self.place = "floor"
         self.x = 150.0
         self.y = float(PLACES["floor"]["y"])
@@ -192,6 +193,8 @@ def _apply_body(player, room):
         place = player.place
         points = POINT_RATE[place]
     rate = heat_rate(place, room.heat)
+    if rate > 0:
+        rate *= getattr(room, "heat_mul", 1.0)
     if player.cool_t > 0 and rate > 0:
         rate *= 0.5
     player.heat += rate / FPS
@@ -280,28 +283,34 @@ def bench_x(player, place):
     return left + (right - left) * (player.idx / 3.0)
 
 
-# ----- bots, shared by autoplay and the playtest -----
+# ----- bots that try to win. Difficulty is timing, not a different sport. -----
 
-PROFILES = {
-    "ahne": {"target": "high", "leave": 86, "back": 34, "throw_at": 74, "item": 0.22, "troll": False, "lock": 0.22},
-    "tasainen": {"target": "mid", "leave": 66, "back": 30, "throw_at": 60, "item": 0.7, "troll": False, "lock": 0.05},
-    "arka": {"target": "low", "leave": 48, "back": 22, "throw_at": 92, "item": 0.9, "troll": False, "lock": 0.0},
-    "kiusa": {"target": "low", "leave": 72, "back": 32, "throw_at": 42, "item": 0.28, "troll": True, "lock": 0.02},
+DIFFICULTY = {
+    # Around 76 heat is the exit that still scores. Easy overstays. Hard hits that exit and snipes the leader.
+    "helppo": {"leave": 90, "back": 24, "jitter": 8, "mistake": 0.30, "throw_heat": 92, "lead": 90, "react": 26, "item_at": 64, "item_p": 0.3},
+    "normaali": {"leave": 78, "back": 30, "jitter": 6, "mistake": 0.10, "throw_heat": 72, "lead": 40, "react": 12, "item_at": 44, "item_p": 0.75},
+    "vaikea": {"leave": 74, "back": 32, "jitter": 2, "mistake": 0.02, "throw_heat": 64, "lead": 16, "react": 4, "item_at": 34, "item_p": 0.95},
+    "ihminen": {"leave": 76, "back": 30, "jitter": 5, "mistake": 0.09, "throw_heat": 70, "lead": 32, "react": 10, "item_at": 42, "item_p": 0.8},
 }
-PROFILE_ORDER = ("ahne", "tasainen", "arka", "kiusa")
 
 
 class Bot:
-    """Greed decides when to sit, when to run for the lake, and when to throw."""
+    """Sit the top bench, leave just in time, and throw löyly at a leader who is cooking."""
 
-    def __init__(self, profile, rng):
-        if isinstance(profile, str):
-            profile = PROFILES[profile]
-        self.profile = profile
+    def __init__(self, name, rng):
+        self.name = name if name in DIFFICULTY else "normaali"
+        self.profile = DIFFICULTY[self.name]
         self.rng = rng
         self.plan = "bench"
         self.lock = 0
+        self.notice = 0
+        self.leave_line = self.profile["leave"]
         self.command = "idle"
+        self._roll_leave()
+
+    def _roll_leave(self):
+        jitter = self.profile["jitter"]
+        self.leave_line = self.profile["leave"] + self.rng.randint(-jitter, jitter)
 
     def decide(self, player, room, players):
         des = blank()
@@ -317,12 +326,13 @@ class Bot:
             if player.mode == "move" and player.place == "floor" and player.x >= STOVE_X and player.loyly_cd <= 0:
                 des["jump"] = True
                 self.plan = "bench"
+                self._roll_leave()
                 self.command = "act"
         elif self.plan == "item" and room.item is not None:
             self._toward(player, room.item.place, room.item.x, des)
         else:
-            target = self.profile["target"]
-            self._toward(player, target, bench_x(player, target), des)
+            self.plan = "bench"
+            self._toward(player, "high", bench_x(player, "high"), des)
         if des["x"] or des["y"] or des["jump"]:
             if self.command != "act":
                 self.command = "move" if (des["x"] or des["y"]) else "act"
@@ -333,46 +343,51 @@ class Bot:
         if self.lock > 0:
             self.lock -= 1
         inside = player.place in INSIDE or player.mode == "climb"
-        if inside and player.heat >= profile["leave"] and self.lock <= 0:
-            self.plan = "cool"
+        if self.plan == "cool":
+            if player.heat <= profile["back"] and player.place in ("porch", "avanto"):
+                self.plan = "bench"
+                self._roll_leave()
             return
         if player.place in ("porch", "avanto") and player.heat > profile["back"]:
             self.plan = "cool"
             return
-        if self.plan == "cool" and player.heat <= profile["back"]:
-            self.plan = "bench"
-        if self.plan == "item" and (room.item is None or player.heat < 28):
-            self.plan = "bench"
-        if self.plan == "throw" and player.loyly_cd > 30:
-            self.plan = "bench"
-        if self.plan != "bench":
+        if inside and player.heat >= self.leave_line and self.lock <= 0:
+            self.notice += 1
+            if self.notice >= profile["react"]:
+                self.plan = "cool"
+                self.notice = 0
             return
-        if player.mode != "move":
+        self.notice = 0
+        if self.plan == "item" and (room.item is None or player.heat < 24):
+            self.plan = "bench"
+        if self.plan == "throw" and player.loyly_cd > 20:
+            self.plan = "bench"
+        if self.plan != "bench" or player.mode != "move":
             return
-        # Decide a few times a second so the plan does not flicker every frame.
-        if player.anim % 20 != 0:
+        if player.anim % 15 != 0:
             return
-        if profile["lock"] and player.heat > profile["leave"] - 18 and self.rng.random() < profile["lock"]:
-            self.lock = 50 + self.rng.randint(0, 40)
+        if player.heat > self.leave_line - 12 and self.rng.random() < profile["mistake"]:
+            self.lock = 45 + self.rng.randint(0, 50)
             return
         if self._wants_throw(player, players):
             self.plan = "throw"
             return
-        if room.item is not None and player.heat > 36 and self.rng.random() < profile["item"]:
+        if room.item is not None and player.heat >= profile["item_at"] and self.rng.random() < profile["item_p"]:
             self.plan = "item"
 
     def _wants_throw(self, player, players):
-        if player.loyly_cd > 0 or player.heat > self.profile["leave"] - 10:
+        if player.loyly_cd > 0 or player.heat > self.leave_line - 12:
             return False
-        threshold = self.profile["throw_at"]
+        hot = self.profile["throw_heat"]
+        lead = self.profile["lead"]
         for other in players:
             if other is player or other.mode == "faint" or not other.inside:
                 continue
-            if other.heat >= threshold:
+            ahead = other.score >= player.score + lead
+            if other.heat >= 88:
                 return True
-            if self.profile["troll"] and ORDER.index(other.place if other.mode != "climb" else other.climb_to) > ORDER.index("low"):
-                if other.heat >= threshold - 12:
-                    return True
+            if ahead and other.heat >= hot:
+                return True
         return False
 
     def _toward(self, player, place, x, des):

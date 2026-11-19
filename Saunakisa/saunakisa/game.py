@@ -3,16 +3,13 @@ import random
 
 import pygame
 
-from .actors import (
-    Bot, Player, PROFILE_ORDER, separate, step_player, throw_into, try_faint,
-)
-from .audio import sfx
-from .const import (
-    COUNTDOWN, H, LAST_BONUS, MIN_FRAMES, PCOLORS, ROUND_FRAMES, ROUNDS, SOLO_HOLD, W,
-)
+from .actors import Bot, Player, separate, step_player, throw_into, try_faint
+from .audio import apply_volume, sfx
+from .const import COUNTDOWN, FPS, H, LAST_BONUS, MIN_FRAMES, PCOLORS, SOLO_HOLD, W
 from .draw import draw_frame, make_background
 from .font import Font
 from .input import Pad, ScriptPad, blank
+from .settings import HEAT_MUL, PICKUP_SEC, load_settings, save_settings
 from .text import tr
 from .version import load_version
 from .world import Room
@@ -30,6 +27,10 @@ class Game:
         self.veil = pygame.Surface((W, H), pygame.SRCALPHA)
         self.veil.fill((28, 16, 12, 150))
         self.version = load_version()
+        self.settings = load_settings()
+        self.match_rounds = int(self.settings["rounds"])
+        self.round_total = int(self.settings["round_secs"]) * FPS
+        self.legend_from = "lobby"
         self.pads = {}
         kb = Pad("kb")
         self.pads[kb.id] = kb
@@ -55,6 +56,8 @@ class Game:
             "exits": 0, "gusts": 0, "flares": 0, "rounds_ended": 0,
             "early": 0, "wipes": 0,
         }
+        apply_volume(self.settings["sfx_vol"], self.settings["music_vol"])
+        self.sync_cpus()
 
     def public_stats(self):
         return dict(self.stats)
@@ -63,25 +66,87 @@ class Game:
         self.autoplay = True
         self.seed = seed
         self.rng = random.Random(seed + 3)
-        for i, name in enumerate(PROFILE_ORDER):
-            pad = ScriptPad("bot%d" % i)
-            pad.auto = True
-            pad.join_frame = 8 + i * 5
-            pad.bot = Bot(name, random.Random(seed + 17 + i))
-            self.pads[pad.id] = pad
+        self.settings["cpus"] = 3
+        self.settings["difficulty"] = "normaali"
+        self.sync_cpus()
+        pad = ScriptPad("human")
+        pad.auto = True
+        pad.join_frame = 8
+        pad.bot = Bot("ihminen", random.Random(seed + 11))
+        self.pads[pad.id] = pad
 
     def goto(self, name):
         self.state = name
         self.t = 0
 
     def add_player(self, pad):
-        if len(self.players) >= 4 or any(p.pad is pad for p in self.players):
+        if any(p.pad is pad for p in self.players):
             return None
-        player = Player(len(self.players), pad)
-        player.reset_round("floor", SPOTS[player.idx])
-        self.players.append(player)
+        humans = [p for p in self.players if not p.cpu]
+        cpus = [p for p in self.players if p.cpu]
+        if len(humans) >= 4:
+            return None
+        if len(humans) + len(cpus) >= 4 and cpus:
+            self._remove_cpu()
+            cpus = [p for p in self.players if p.cpu]
+        player = Player(0, pad)
+        player.cpu = False
+        player.reset_round("floor", SPOTS[0])
+        humans.append(player)
+        self.players = humans + cpus
+        self.reindex()
+        self.settings["cpus"] = len(cpus)
         sfx("join")
         return player
+
+    def _remove_cpu(self):
+        for player in reversed(self.players):
+            if player.cpu:
+                self.players.remove(player)
+                self.pads.pop(player.pad.id, None)
+                self.reindex()
+                return player
+        return None
+
+    def sync_cpus(self):
+        humans = [p for p in self.players if not p.cpu]
+        cap = max(0, 4 - len(humans))
+        want = min(int(self.settings["cpus"]), cap)
+        self.settings["cpus"] = want
+        cpus = [p for p in self.players if p.cpu]
+        while len(cpus) > want:
+            gone = cpus.pop()
+            self.pads.pop(gone.pad.id, None)
+        while len(cpus) < want:
+            pad = ScriptPad("cpu")
+            pad.id = "cpu-%d-%d" % (self.t, len(cpus))
+            pad.auto = True
+            pad.bot = Bot(self.settings["difficulty"], random.Random(self.seed + 300 + len(cpus) + self.t))
+            self.pads[pad.id] = pad
+            player = Player(0, pad)
+            player.cpu = True
+            cpus.append(player)
+        for player in cpus:
+            bot = getattr(player.pad, "bot", None)
+            if bot is None or bot.name != self.settings["difficulty"]:
+                player.pad.bot = Bot(
+                    self.settings["difficulty"],
+                    random.Random(self.seed + 400 + player.idx + self.t),
+                )
+                player.pad.auto = True
+        self.players = humans + cpus
+        self.reindex()
+
+    def cycle_cpus(self):
+        humans = len([p for p in self.players if not p.cpu])
+        cap = 4 - humans
+        if cap <= 0:
+            self.settings["cpus"] = 0
+        else:
+            cur = min(int(self.settings["cpus"]), cap)
+            self.settings["cpus"] = (cur + 1) % (cap + 1)
+        self.sync_cpus()
+        save_settings(self.settings)
 
     def reindex(self):
         for i, player in enumerate(self.players):
@@ -255,26 +320,52 @@ class Game:
         getattr(self, "up_" + self.state)()
 
     def up_lobby(self):
+        if any(pad.pressed("cpu") for pad in self.pads.values()):
+            self.cycle_cpus()
         for pad in list(self.pads.values()):
             if pad.pressed("alt"):
-                self.goto("legend")
+                self.menu_i = 0
+                self.goto("settings")
                 return
             owned = self.owner(pad)
-            if owned is not None and pad.pressed("back"):
+            if owned is not None and not owned.cpu and pad.pressed("back"):
                 self.players.remove(owned)
                 self.reindex()
+                self.settings["cpus"] = len([p for p in self.players if p.cpu])
                 continue
             if owned is None and pad.pressed("jump"):
                 self.add_player(pad)
-        if len(self.players) >= 2 and any(
-            self.owner(pad) is not None and pad.pressed("start") for pad in self.pads.values()
-        ):
+        humans = [p for p in self.players if not p.cpu]
+        if len(self.players) >= 2 and humans and any(p.pad.pressed("start") for p in humans):
             self.begin_round()
+
+    def up_settings(self):
+        rows = self.setting_rows()
+        n = len(rows)
+        for pad in self.pads.values():
+            if pad.cur["y"] < -0.5 and pad.prev["y"] >= -0.5:
+                self.menu_i = (self.menu_i - 1) % n
+            elif pad.cur["y"] > 0.5 and pad.prev["y"] <= 0.5:
+                self.menu_i = (self.menu_i + 1) % n
+            if pad.cur["x"] > 0.5 and abs(pad.prev["x"]) <= 0.5:
+                self._tweak(rows[self.menu_i][0], 1)
+            elif pad.cur["x"] < -0.5 and abs(pad.prev["x"]) <= 0.5:
+                self._tweak(rows[self.menu_i][0], -1)
+            if pad.pressed("jump") and rows[self.menu_i][0] == "help":
+                self.legend_from = "settings"
+                self.goto("legend")
+                return
+            if pad.pressed("back") or pad.pressed("alt"):
+                self._close_settings()
+                return
+            if pad.pressed("jump"):
+                self._close_settings()
+                return
 
     def up_legend(self):
         for pad in self.pads.values():
             if pad.pressed("jump") or pad.pressed("back") or pad.pressed("alt") or pad.pressed("start"):
-                self.goto("lobby")
+                self.goto(self.legend_from)
                 return
 
     def up_ready(self):
@@ -303,8 +394,9 @@ class Game:
             self.stats["wipes"] += 1
             self._finish_round()
             return
-        elapsed = ROUND_FRAMES - max(0, self.round_left)
-        if len(alive) == 1 and len(self.players) >= 2 and elapsed >= MIN_FRAMES:
+        elapsed = self.round_total - max(0, self.round_left)
+        early_at = min(MIN_FRAMES, int(self.round_total * 0.62))
+        if len(alive) == 1 and len(self.players) >= 2 and elapsed >= early_at:
             alive[0].score += LAST_BONUS
             alive[0].got_bonus = True
             self.stats["early"] += 1
@@ -331,7 +423,7 @@ class Game:
 
     def up_roundend(self):
         if self.t > 24 and any(p.pad.pressed("jump") or p.pad.pressed("start") for p in self.players):
-            if self.round_no >= ROUNDS:
+            if self.round_no >= self.match_rounds:
                 self.goto("results")
             else:
                 self.begin_round()
@@ -379,10 +471,47 @@ class Game:
         self.round_no = 0
         self.begin_round()
 
+    def setting_rows(self):
+        s = self.settings
+        return (
+            ("cpus", tr("set_cpu"), str(s["cpus"])),
+            ("difficulty", tr("set_diff"), tr("d_" + s["difficulty"])),
+            ("rounds", tr("set_rounds"), str(s["rounds"])),
+            ("round_secs", tr("set_length"), tr("secs", s["round_secs"])),
+            ("heat", tr("set_heat"), tr("h_" + s["heat"])),
+            ("pickups", tr("set_pick"), tr("p_" + s["pickups"])),
+            ("sfx_vol", tr("set_sfx"), str(s["sfx_vol"])),
+            ("music_vol", tr("set_music"), str(s["music_vol"])),
+            ("help", tr("set_help"), ""),
+        )
+
+    def _tweak(self, key, step):
+        if key == "help":
+            return
+        from .settings import CHOICES
+        options = CHOICES[key]
+        cur = self.settings[key]
+        idx = options.index(cur) if cur in options else 0
+        self.settings[key] = options[(idx + step) % len(options)]
+        if key in ("cpus", "difficulty"):
+            self.sync_cpus()
+        if key in ("sfx_vol", "music_vol"):
+            apply_volume(self.settings["sfx_vol"], self.settings["music_vol"])
+
+    def _close_settings(self):
+        self.sync_cpus()
+        save_settings(self.settings)
+        apply_volume(self.settings["sfx_vol"], self.settings["music_vol"])
+        self.goto("lobby")
+
     def begin_round(self):
         self.round_no += 1
-        self.room = Room(self.rng)
-        self.round_left = ROUND_FRAMES
+        self.match_rounds = int(self.settings["rounds"])
+        self.round_total = int(self.settings["round_secs"]) * FPS
+        every = int(PICKUP_SEC[self.settings["pickups"]]) * FPS
+        heat_mul = HEAT_MUL[self.settings["heat"]]
+        self.room = Room(self.rng, pickup_every=every, heat_mul=heat_mul)
+        self.round_left = self.round_total
         self.ending = 0
         self.go_flash = 0
         self.round_winners = []

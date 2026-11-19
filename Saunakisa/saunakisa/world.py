@@ -1,7 +1,7 @@
 # The room: löyly in the air, the occasional gust or flare, and one cooling pickup.
 from .const import (
     DOOR_DRAFT, EVENT_MAX, EVENT_MIN, FLARE_BODY, FLARE_ROOM, FPS, GUST_BODY,
-    GUST_ROOM, INSIDE, ITEM_EVERY, ITEM_FIRST, ROOM_RISE, START_ROOM,
+    GUST_ROOM, INSIDE, ITEM_EVERY, ROOM_RISE, START_ROOM,
 )
 
 
@@ -13,11 +13,13 @@ class Item:
 
 
 class Room:
-    def __init__(self, rng):
+    def __init__(self, rng, pickup_every=None, heat_mul=1.0):
         self.rng = rng
         self.heat = START_ROOM
+        self.heat_mul = heat_mul if heat_mul > 0 else 1.0
+        self.pickup_every = pickup_every or ITEM_EVERY
         self.item = None
-        self.item_in = ITEM_FIRST
+        self.item_in = max(4 * FPS, self.pickup_every // 2)
         self.event_in = rng.randint(EVENT_MIN, EVENT_MAX)
         self.fx = None
         self.fx_t = 0
@@ -28,7 +30,7 @@ class Room:
 
     def tick(self, players):
         """Passive rise, then a gust or a flare. Returns event names."""
-        self.heat = min(100.0, self.heat + ROOM_RISE / FPS)
+        self.heat = min(100.0, self.heat + ROOM_RISE * self.heat_mul / FPS)
         if self.loyly_t:
             self.loyly_t -= 1
         if self.fx_t:
@@ -43,7 +45,7 @@ class Room:
                 names.append("spawn")
         self.event_in -= 1
         if self.event_in <= 0:
-            kind = "gust" if self.rng.random() < 0.46 else "flare"
+            kind = "gust" if self.rng.random() < 0.40 else "flare"
             self._event(kind, players)
             names.append(kind)
             self.event_in = self.rng.randint(EVENT_MIN, EVENT_MAX)
@@ -60,7 +62,7 @@ class Room:
 
     def took_item(self):
         self.item = None
-        self.item_in = ITEM_EVERY
+        self.item_in = self.pickup_every
 
     def _event(self, kind, players):
         self.fx = kind
@@ -75,13 +77,14 @@ class Room:
                     player.heat = max(0.0, player.heat - GUST_BODY)
         else:
             self.flares += 1
-            self.heat = min(100.0, self.heat + FLARE_ROOM)
+            self.heat = min(100.0, self.heat + FLARE_ROOM * self.heat_mul)
+            burst = FLARE_BODY * self.heat_mul
             for player in players:
                 if player.mode == "faint":
                     continue
                 place = player.place if player.mode != "climb" else player.climb_to
                 if place in INSIDE:
-                    player.heat = min(100.0, player.heat + FLARE_BODY)
+                    player.heat = min(100.0, player.heat + burst)
 
     def draft(self):
         self.heat = max(0.0, self.heat - DOOR_DRAFT)

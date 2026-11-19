@@ -1,18 +1,20 @@
 # One pad, one player. SDL GameController first; raw hid-playstation if it is not mapped.
-# Cross and Circle are the action (join, throw löyly), Triangle opens the legend,
-# Options starts, Share goes back. The same layout for every player.
-# Instance id, never a hard-coded joystick 0. "jump" is that action button.
+# Cross and Circle are the action (join, throw löyly). Square cycles CPU players.
+# Triangle opens settings, Options starts, Share goes back.
+# The same layout for every player. Instance id, never a hard-coded joystick 0.
+# "jump" is the action button. "cpu" is Square.
 import pygame
 
 
 def blank():
-    return {"x": 0.0, "y": 0.0, "jump": False, "start": False, "back": False, "alt": False}
+    return {"x": 0.0, "y": 0.0, "jump": False, "start": False, "back": False, "alt": False, "cpu": False}
 
 
 class Pad:
     # Linux hid-playstation / DualShock: Cross, Circle, Square, Triangle, L1, R1, L2, R2, Share, Options.
     RAW_JUMP = 0
     RAW_CIRCLE = 1
+    RAW_SQUARE = 2
     RAW_TRIANGLE = 3
     RAW_SHARE = 8
     RAW_OPTIONS = 9
@@ -48,6 +50,7 @@ class Pad:
                 c["start"] = bool(ks[pygame.K_RETURN] or ks[pygame.K_KP_ENTER])
                 c["back"] = bool(ks[pygame.K_BACKSPACE] or ks[pygame.K_TAB])
                 c["alt"] = bool(ks[pygame.K_c])
+                c["cpu"] = bool(ks[pygame.K_q])
             elif self.kind == "gc":
                 g = self.dev
                 ax = g.get_axis(pygame.CONTROLLER_AXIS_LEFTX) / 32768.0
@@ -65,6 +68,7 @@ class Pad:
                 c["start"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_START))
                 c["back"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_BACK))
                 c["alt"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_Y))
+                c["cpu"] = bool(g.get_button(pygame.CONTROLLER_BUTTON_X))
             elif self.kind == "js":
                 j = self.dev
                 ax = j.get_axis(0) if j.get_numaxes() > 0 else 0.0
@@ -82,6 +86,7 @@ class Pad:
                     return nb > i and bool(j.get_button(i))
 
                 c["jump"] = b(Pad.RAW_JUMP) or b(Pad.RAW_CIRCLE)
+                c["cpu"] = b(Pad.RAW_SQUARE)
                 c["alt"] = b(Pad.RAW_TRIANGLE)
                 c["back"] = b(Pad.RAW_SHARE)
                 c["start"] = b(Pad.RAW_OPTIONS)

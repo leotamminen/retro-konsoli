@@ -8,7 +8,29 @@ FI = {
     "join": "LIITY",
     "need": "TARVITAAN 2 PELAAJAA",
     "start_hint": "OPTIONS: ALOITA",
-    "legend_btn": "KOLMIO: OHJE",
+    "legend_btn": "KOLMIO: ASETUKSET",
+    "cpu_hint": "NELIÖ: CPU",
+    "cpu_tag": "CPU",
+    "settings": "ASETUKSET",
+    "set_cpu": "CPU",
+    "set_diff": "VAIKEUS",
+    "set_rounds": "ERÄT",
+    "set_length": "ERÄN PITUUS",
+    "set_heat": "KUUMUUS",
+    "set_pick": "POIMINNAT",
+    "set_sfx": "ÄÄNET",
+    "set_music": "MUSIIKKI",
+    "set_help": "OHJE",
+    "d_helppo": "HELPPO",
+    "d_normaali": "NORMAALI",
+    "d_vaikea": "VAIKEA",
+    "h_hidas": "HIDAS",
+    "h_normaali": "NORMAALI",
+    "h_nopea": "NOPEA",
+    "p_harvoin": "HARVOIN",
+    "p_normaali": "NORMAALI",
+    "p_usein": "USEIN",
+    "secs": "%dS",
     "leave_hint": "SHARE: POISTU",
     "quit_hint": "SHARE+OPTIONS: LOPETA",
     "round": "ERÄ %d/%d",
@@ -59,3 +81,9 @@ def tr(key, *args):
 
 def pname(idx):
     return PNAMES[idx]
+
+
+def label(player):
+    if getattr(player, "cpu", False):
+        return tr("cpu_tag")
+    return pname(player.idx)

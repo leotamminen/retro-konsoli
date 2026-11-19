@@ -13,7 +13,7 @@ SOLO_HOLD = 100
 HEAT_MAX = 100.0
 START_HEAT = 10.0
 START_ROOM = 22.0
-ROOM_RISE = 0.40
+ROOM_RISE = 0.50
 ROOM_MULT0 = 0.66
 ROOM_MULT1 = 1.08
 FAINT_KEEP = 0.70
@@ -29,7 +29,7 @@ HEAT_RATE = {
 }
 # Points per second. The floor is a corridor, the top bench is the prize.
 POINT_RATE = {
-    "high": 6.4,
+    "high": 5.3,
     "mid": 3.6,
     "low": 2.0,
     "floor": 0.35,
@@ -54,12 +54,12 @@ TOWEL_TIME = 4 * FPS
 ITEM_FIRST = 7 * FPS
 ITEM_EVERY = 12 * FPS
 
-EVENT_MIN = 9 * FPS
-EVENT_MAX = 14 * FPS
+EVENT_MIN = int(5.5 * FPS)
+EVENT_MAX = 9 * FPS
 GUST_ROOM = 15.0
 GUST_BODY = 7.0
-FLARE_ROOM = 11.0
-FLARE_BODY = 5.0
+FLARE_ROOM = 13.0
+FLARE_BODY = 7.0
 DOOR_DRAFT = 4.0
 
 # x0, x1, feet y. climb_x is where up/down changes bench.

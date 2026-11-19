@@ -12,6 +12,7 @@ ORDER = (
     "font.py",
     "text.py",
     "input.py",
+    "settings.py",
     "audio.py",
     "world.py",
     "actors.py",

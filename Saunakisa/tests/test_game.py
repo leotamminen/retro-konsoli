@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import unittest
@@ -7,12 +8,12 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 os.environ.setdefault("SAUNAKISA_NO_SFX", "1")
 os.environ.setdefault("SAUNAKISA_NO_MUSIC", "1")
 os.environ.setdefault("SAUNAKISA_WINDOWED", "1")
+os.environ["SAUNAKISA_SETTINGS"] = "/tmp/saunakisa-test-settings.json"
 
 import pygame
 
-from saunakisa.actors import (
-    Bot, Player, heat_rate, step_player, throw_into, try_faint,
-)
+from saunakisa.actors import Bot, Player, heat_rate, step_player, throw_into, try_faint
+from saunakisa.settings import load_settings, save_settings, sanitize_settings
 from saunakisa.const import (
     FPS, HEAT_MAX, HEAT_RATE, MIN_FRAMES, PLACES, POINT_RATE, ROUND_FRAMES, STOVE_X,
 )
@@ -30,7 +31,7 @@ def boot(players=4, seed=1):
     game.seed = seed
     game.rng = random.Random(seed + 3)
     bots = []
-    names = ("ahne", "tasainen", "arka", "kiusa")[:players]
+    names = ("ihminen", "vaikea", "normaali", "helppo")[:players]
     for i, name in enumerate(names):
         pad = ScriptPad("t%d" % i)
         game.pads[pad.id] = pad
@@ -67,16 +68,21 @@ class Tests(unittest.TestCase):
         pygame.display.set_mode((320, 180))
 
     def test_version_comes_from_json(self):
-        self.assertEqual(load_version(), "0.1")
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "version.json"), encoding="utf-8") as fh:
+            version = json.loads(fh.read())["version"]
+        self.assertEqual(version, "0.2")
+        self.assertEqual(load_version(), version)
+        quoted = '"%s"' % version
+        squoted = "'%s'" % version
         for dirpath, _dirs, files in os.walk(os.path.join(root, "saunakisa")):
             for name in files:
                 if not name.endswith(".py"):
                     continue
                 with open(os.path.join(dirpath, name), encoding="utf-8") as fh:
                     text = fh.read()
-                self.assertNotIn('"0.1"', text)
-                self.assertNotIn("'0.1'", text)
+                self.assertNotIn(quoted, text)
+                self.assertNotIn(squoted, text)
 
     def test_finnish_glyphs_exist(self):
         for key, text in FI.items():
@@ -237,6 +243,49 @@ class Tests(unittest.TestCase):
         game.update()
         self.assertEqual(game.state, "ready")
         self.assertTrue(game.version)
+
+    def setUp(self):
+        path = os.environ["SAUNAKISA_SETTINGS"]
+        if os.path.exists(path):
+            os.remove(path)
+
+    def test_settings_ignore_missing_and_corrupt(self):
+        self.assertEqual(sanitize_settings(None)["rounds"], 3)
+        bad = sanitize_settings({"cpus": 9, "difficulty": "nope", "sfx_vol": True, "rounds": 5})
+        self.assertEqual(bad["cpus"], 0)
+        self.assertEqual(bad["difficulty"], "normaali")
+        self.assertEqual(bad["rounds"], 5)
+        path = "/tmp/saunakisa-corrupt.json"
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        self.assertEqual(load_settings(path)["heat"], "normaali")
+        self.assertEqual(load_settings("/tmp/saunakisa-does-not-exist.json")["round_secs"], 78)
+        saved = dict(load_settings())
+        saved["difficulty"] = "vaikea"
+        self.assertTrue(save_settings(saved, "/tmp/saunakisa-roundtrip.json"))
+        self.assertEqual(load_settings("/tmp/saunakisa-roundtrip.json")["difficulty"], "vaikea")
+
+    def test_square_adds_cpu_and_options_starts(self):
+        screen = pygame.display.get_surface()
+        game = Game(screen)
+        pad = ScriptPad("solo")
+        game.pads[pad.id] = pad
+        pad.desired = blank()
+        pad.desired["jump"] = True
+        game.update()
+        self.assertEqual(len(game.players), 1)
+        self.assertFalse(game.players[0].cpu)
+        pad.desired = blank()
+        pad.desired["cpu"] = True
+        game.update()
+        self.assertEqual(len(game.players), 2)
+        self.assertEqual(sum(p.cpu for p in game.players), 1)
+        pad.desired = blank()
+        game.update()
+        pad.desired = blank()
+        pad.desired["start"] = True
+        game.update()
+        self.assertEqual(game.state, "ready")
 
 
 if __name__ == "__main__":

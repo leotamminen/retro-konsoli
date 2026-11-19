@@ -6,7 +6,10 @@ import os
 import pygame
 
 _SFX = {}
+_MUSIC = None
 _READY = False
+_SFX_VOL = 0.8
+_MUSIC_VOL = 0.6
 
 
 def _tone(freq, dur, vol=0.25, wave="sq", slide=0.0):
@@ -66,7 +69,7 @@ def prepare_audio():
 
 
 def start_audio():
-    global _READY
+    global _READY, _MUSIC
     if os.environ.get("SAUNAKISA_NO_SFX"):
         return
     try:
@@ -80,10 +83,33 @@ def start_audio():
         _SFX["win"] = pygame.mixer.Sound(buffer=_tone(523, 0.26, 0.18, "tri", 0.12).tobytes())
         _SFX["join"] = pygame.mixer.Sound(buffer=_tone(620, 0.07, 0.14, "sq", 0.2).tobytes())
         if not os.environ.get("SAUNAKISA_NO_MUSIC"):
-            pygame.mixer.Sound(buffer=_music().tobytes()).play(loops=-1)
+            _MUSIC = pygame.mixer.Sound(buffer=_music().tobytes())
+            _MUSIC.play(loops=-1)
+        apply_volume(int(_SFX_VOL * 10), int(_MUSIC_VOL * 10))
         _READY = True
     except Exception:
         _READY = False
+
+
+def apply_volume(sfx_vol, music_vol):
+    global _SFX_VOL, _MUSIC_VOL
+    try:
+        sfx_vol = int(sfx_vol)
+        music_vol = int(music_vol)
+    except (TypeError, ValueError):
+        return
+    _SFX_VOL = max(0, min(10, sfx_vol)) / 10.0
+    _MUSIC_VOL = max(0, min(10, music_vol)) / 10.0
+    for sound in _SFX.values():
+        try:
+            sound.set_volume(_SFX_VOL)
+        except Exception:
+            pass
+    if _MUSIC is not None:
+        try:
+            _MUSIC.set_volume(_MUSIC_VOL)
+        except Exception:
+            pass
 
 
 def _music():
@@ -107,7 +133,7 @@ def _music():
 
 
 def sfx(name):
-    if not _READY or os.environ.get("SAUNAKISA_AUTOPLAY"):
+    if not _READY or os.environ.get("SAUNAKISA_AUTOPLAY") or _SFX_VOL <= 0:
         return
     sound = _SFX.get(name)
     if sound is not None:

@@ -5,7 +5,7 @@ import pygame
 
 from .const import FPS, H, PCOLORS, PH, PLACES, PW, W
 from .font import blit
-from .text import pname, tr
+from .text import label, pname, tr
 
 WOOD_DK = (78, 42, 24)
 WOOD = (132, 78, 42)
@@ -94,6 +94,8 @@ def draw_frame(g):
     st = g.state
     if st == "lobby":
         draw_lobby(g)
+    elif st == "settings":
+        draw_settings(g)
     elif st == "legend":
         draw_legend(g)
     elif st == "results":
@@ -248,7 +250,7 @@ def _fainted(c, x, feet, skin, col, edge, t, idx):
 
 def _meter(c, x, y, heat):
     bar_y = y - 4
-    if bar_y < 14:
+    if bar_y < 16:
         bar_y = y + PH + 1
     pygame.draw.rect(c, (20, 12, 10), (x, bar_y, PW, 4))
     w = int((PW - 2) * max(0.0, min(1.0, heat)))
@@ -265,24 +267,25 @@ def _meter(c, x, y, heat):
 def _hud(g):
     c = g.canvas
     font = _font(g)
-    pygame.draw.rect(c, (32, 18, 14), (0, 0, W, 13))
-    pygame.draw.rect(c, (90, 52, 30), (0, 12, W, 1))
+    pygame.draw.rect(c, (32, 18, 14), (0, 0, W, 16))
+    pygame.draw.rect(c, (90, 52, 30), (0, 15, W, 1))
     for i, player in enumerate(g.players):
-        x = 3 + i * 36
-        pygame.draw.rect(c, PCOLORS[player.idx][0], (x, 3, 6, 6))
-        blit(c, font, str(int(player.score)), x + 8, 2, (255, 236, 214), 1, shadow=False)
-    label = tr("round", g.round_no, 3)
-    blit(c, font, label, 168, 2, (255, 214, 160), 1, shadow=False)
+        x = 2 + i * 32
+        pygame.draw.rect(c, PCOLORS[player.idx][0], (x, 4, 6, 8))
+        blit(c, font, str(int(player.score)), x + 8, 1, (255, 236, 214), 1, shadow=False)
+    rounds = getattr(g, "match_rounds", 3)
+    hud = tr("round", g.round_no, rounds)
+    blit(c, font, hud, 132, 1, (255, 214, 160), 1, shadow=False)
     left = 0 if g.room is None else max(0, g.round_left)
     secs = (left + FPS - 1) // FPS if left else 0
     # imported locally to keep this file from needing a cycle on a renamed const
     clock = "%d:%02d" % (secs // 60, secs % 60)
     col = (255, 120, 90) if 0 < secs <= 10 else (255, 244, 220)
-    blit(c, font, clock, 228, 2, col, 1, shadow=False)
+    blit(c, font, clock, 214, 1, col, 1, shadow=False)
     heat = 0 if g.room is None else g.room.heat / 100.0
-    pygame.draw.rect(c, (255, 220, 170), (267, 2, 50, 8), 1)
-    pygame.draw.rect(c, (48, 28, 22), (268, 3, 48, 6))
-    pygame.draw.rect(c, _mix((90, 190, 90), (255, 70, 36), heat), (268, 3, max(1, int(48 * heat)), 6))
+    pygame.draw.rect(c, (255, 220, 170), (262, 4, 54, 8), 1)
+    pygame.draw.rect(c, (48, 28, 22), (263, 5, 52, 6))
+    pygame.draw.rect(c, _mix((90, 190, 90), (255, 70, 36), heat), (263, 5, max(1, int(52 * heat)), 6))
 
 
 def _notes(g):
@@ -299,27 +302,52 @@ def draw_lobby(g):
     c.blit(g.veil, (0, 0))
     font = _font(g)
     bob = int(math.sin(g.t * 0.08) * 2)
-    blit(c, font, tr("title"), W // 2, 18 + bob, (255, 214, 140), 2, center=True)
+    blit(c, font, tr("title"), W // 2, 14 + bob, (255, 214, 140), 2, center=True)
     ver = "V" + g.version
     vw, _vh = font.size(ver, 1)
-    blit(c, font, ver, W - vw - 4, 3, (220, 170, 120), 1, shadow=False)
-    blit(c, font, tr("tag"), W // 2, 40, (255, 186, 130), 1, center=True)
+    blit(c, font, ver, W - vw - 4, 2, (220, 170, 120), 1, shadow=False)
+    blit(c, font, tr("tag"), W // 2, 36, (255, 186, 130), 1, center=True)
     for i in range(4):
         x = 8 + i * 78
-        box = pygame.Rect(x, 54, 74, 78)
+        box = pygame.Rect(x, 50, 74, 78)
         pygame.draw.rect(c, (255, 232, 204), box)
         pygame.draw.rect(c, PCOLORS[i][1], box, 2)
         if i < len(g.players):
             player = g.players[i]
-            draw_player(c, player, g.t, at=(x + 28, 78))
-            blit(c, font, pname(i), x + 37, 118, PCOLORS[i][0], 1, center=True)
+            draw_player(c, player, g.t, at=(x + 28, 72))
+            who = label(player)
+            blit(c, font, who, x + 37, 112, PCOLORS[i][0], 1, center=True)
         else:
             if (g.t // 25) % 2 == 0:
-                blit(c, font, tr("press"), x + 37, 82, (140, 90, 70), 1, center=True)
-            blit(c, font, tr("join"), x + 37, 96, (110, 70, 50), 1, center=True)
-    hint = tr("start_hint") + "   " + tr("legend_btn") if len(g.players) >= 2 else tr("need")
-    blit(c, font, hint, W // 2, 146, (255, 220, 180), 1, center=True)
-    blit(c, font, tr("leave_hint") + "   " + tr("quit_hint"), W // 2, 164, (230, 180, 140), 1, center=True)
+                blit(c, font, tr("press"), x + 37, 78, (140, 90, 70), 1, center=True)
+            blit(c, font, tr("join"), x + 37, 94, (110, 70, 50), 1, center=True)
+    ready = len(g.players) >= 2 and any(not p.cpu for p in g.players)
+    hint = tr("start_hint") if ready else tr("need")
+    blit(c, font, hint, W // 2, 140, (255, 220, 180), 1, center=True)
+    blit(c, font, tr("cpu_hint") + "   " + tr("legend_btn"), W // 2, 154, (255, 214, 170), 1, center=True)
+    blit(c, font, tr("leave_hint"), W // 2, 168, (230, 180, 140), 1, center=True)
+
+
+def draw_settings(g):
+    c = g.canvas
+    c.blit(g.bg, (0, 0))
+    c.blit(g.veil, (0, 0))
+    font = _font(g)
+    panel = pygame.Rect(6, 2, W - 12, 156)
+    pygame.draw.rect(c, (255, 236, 214), panel)
+    pygame.draw.rect(c, (120, 64, 36), panel, 2)
+    blit(c, font, tr("settings"), W // 2, 8, (120, 64, 36), 1, center=True, shadow=False)
+    rows = g.setting_rows()
+    for i, (_key, name, value) in enumerate(rows):
+        y = 24 + i * 14
+        if i == g.menu_i:
+            pygame.draw.rect(c, (255, 196, 120), (12, y - 1, W - 24, 14))
+        ink = (60, 28, 16)
+        blit(c, font, name, 18, y, ink, 1, shadow=False)
+        if value:
+            vw, _vh = font.size(value, 1)
+            blit(c, font, value, W - 18 - vw, y, ink, 1, shadow=False)
+    blit(c, font, tr("back"), W // 2, 166, (255, 236, 214), 1, center=True)
 
 
 def draw_legend(g):
@@ -357,7 +385,7 @@ def draw_round_end(g):
     pygame.draw.rect(c, (120, 64, 36), panel, 2)
     winners = g.round_winners or []
     if len(winners) == 1:
-        title = tr("win", pname(winners[0].idx))
+        title = tr("win", label(winners[0]))
         col = PCOLORS[winners[0].idx][0]
     else:
         title, col = tr("draw"), (120, 64, 36)
@@ -365,13 +393,16 @@ def draw_round_end(g):
     blit(c, font, tr("board"), W // 2, 42, (120, 70, 40), 1, center=True)
     order = sorted(g.players, key=lambda p: (-p.round_points, p.idx))
     for i, player in enumerate(order):
-        y = 56 + i * 20
-        pygame.draw.rect(c, PCOLORS[player.idx][0], (22, y, 8, 8))
-        blit(c, font, pname(player.idx), 34, y - 1, (70, 36, 24), 1, shadow=False)
-        line = "%s %d   %s %d" % (tr("points"), player.round_points, tr("total"), player.bank)
+        y = 58 + i * 18
+        pygame.draw.rect(c, PCOLORS[player.idx][0], (20, y + 2, 8, 8))
+        blit(c, font, label(player), 32, y, (70, 36, 24), 1, shadow=False)
+        line = "%d" % player.round_points
         if player.mode == "faint":
-            line += "  " + tr("fainted")
-        blit(c, font, line, 34, y + 8, (110, 64, 40), 1, shadow=False)
+            line += " " + tr("fainted")
+        blit(c, font, line, 130, y, (90, 48, 28), 1, shadow=False)
+        tot = "%s %d" % (tr("total"), player.bank)
+        tw, _th = font.size(tot, 1)
+        blit(c, font, tot, W - 28 - tw, y, (110, 64, 40), 1, shadow=False)
     if g.t > 24 and (g.t // 20) % 2 == 0:
         blit(c, font, tr("next"), W // 2, 162, (255, 220, 170), 1, center=True)
 
@@ -384,7 +415,7 @@ def draw_results(g):
     blit(c, font, tr("results"), W // 2, 2, (255, 220, 160), 1, center=True)
     if g.players:
         champ = max(g.players, key=lambda p: (p.bank, p.wins, -p.faints, -p.idx))
-        blit(c, font, tr("champ", pname(champ.idx)), W // 2, 20, PCOLORS[champ.idx][0], 1, center=True)
+        blit(c, font, tr("champ", label(champ)), W // 2, 20, PCOLORS[champ.idx][0], 1, center=True)
         draw_player(c, champ, g.t, at=(W // 2 - 6, 32))
     order = sorted(g.players, key=lambda p: (-p.bank, -p.wins, p.idx))
     panel = pygame.Rect(16, 64, W - 32, 78)
@@ -393,7 +424,7 @@ def draw_results(g):
     for i, player in enumerate(order):
         y = 72 + i * 16
         pygame.draw.rect(c, PCOLORS[player.idx][0], (26, y, 8, 8))
-        blit(c, font, pname(player.idx), 40, y, (70, 36, 24), 1, shadow=False)
+        blit(c, font, label(player), 40, y, (70, 36, 24), 1, shadow=False)
         blit(c, font, str(player.bank), 168, y, (90, 48, 28), 1, shadow=False)
         for k in range(min(3, player.wins)):
             pygame.draw.rect(c, (220, 160, 40), (230 + k * 8, y, 6, 6))

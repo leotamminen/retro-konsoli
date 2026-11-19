@@ -19,11 +19,12 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 os.environ.setdefault("SAUNAKISA_NO_MUSIC", "1")
 os.environ.setdefault("SAUNAKISA_NO_SFX", "1")
 os.environ.setdefault("SAUNAKISA_WINDOWED", "1")
+os.environ.setdefault("SAUNAKISA_SETTINGS", "/tmp/saunakisa-playtest-settings.json")
 
 import pygame
 
 from highlights import Event
-from saunakisa.actors import PROFILE_ORDER, Bot
+from saunakisa.actors import Bot
 from saunakisa.const import FPS, H, PNAMES, W
 from saunakisa.game import Game
 from saunakisa.input import ScriptPad, blank
@@ -52,30 +53,24 @@ class SaunakisaAdapter:
         self._round_seconds = []
         self._moved_ready = 0
         self._ready_xy = None
+        self.difficulty = "vaikea"
+        self.human = None
 
     def start(self, players, seed, rounds):
         if players < 2 or players > 4:
             raise SystemExit("saunakisa needs 2 to 4 players")
         self.rounds = rounds
         self.seed = seed
+        diff = self.difficulty or "vaikea"
         pygame.init()
         screen = pygame.display.set_mode((W, H))
         pygame.display.set_caption("SAUNAKISA playtest")
-        game = Game(screen)
-        game.seed = seed
-        game.rng = random.Random(seed + 3)
-        rng = random.Random(seed)
-        names = list(PROFILE_ORDER[:players])
-        if players == 2:
-            names = ["ahne", "arka"]
-        self.bots = []
-        for i, name in enumerate(names):
-            pad = ScriptPad("bot%d" % i)
-            game.pads[pad.id] = pad
-            game.add_player(pad)
-            self.bots.append(Bot(name, random.Random(rng.randrange(1, 10 ** 9))))
+        game = _seat_match(screen, players, seed, rounds, diff)
         game.begin_round()
         self.game = game
+        self.human = game.players[0].pad.bot
+        self.bots = [p.pad.bot for p in game.players]
+        self._profiles = ["ihminen"] + [diff] * (players - 1)
         self._prev = None
         self._stats = dict(game.stats)
         self._round_ends = 0
@@ -86,7 +81,6 @@ class SaunakisaAdapter:
         self._moved_ready = 0
         self._ready_xy = None
         self._stuck_mark = {}
-        self._profiles = names
 
     def write_inputs(self):
         game = self.game
@@ -100,8 +94,8 @@ class SaunakisaAdapter:
             return
         if game.room is None:
             return
-        for bot, player in zip(self.bots, game.players):
-            player.pad.desired = bot.decide(player, game.room, game.players)
+        human = game.players[0]
+        human.pad.desired = human.pad.bot.decide(human, game.room, game.players)
 
     def tick(self):
         self.game.update()
@@ -115,6 +109,7 @@ class SaunakisaAdapter:
     def collect(self, frame):
         game = self.game
         t = frame / float(self.sim_fps)
+        self.bots = [p.pad.bot for p in game.players]
         snaps = []
         for player, bot in zip(game.players, self.bots):
             snaps.append({
@@ -268,3 +263,100 @@ class SaunakisaAdapter:
             out.append(Event(t, frame, "effect", "The kiuas flared", 44))
         self._stats = dict(stats)
         return out
+
+    def balance(self, matches, players, rounds, seed):
+        report = balance_matches(self.difficulty or "vaikea", matches, rounds, seed, players)
+        print(report)
+        return report
+
+
+def _seat_match(screen, players, seed, rounds, difficulty):
+    """One human-like bot in seat 0, the rest CPU at the given difficulty."""
+    game = Game(screen)
+    game.seed = seed
+    game.rng = random.Random(seed + 3)
+    game.settings["cpus"] = players - 1
+    game.settings["difficulty"] = difficulty
+    game.settings["rounds"] = rounds
+    game.settings["round_secs"] = 78
+    game.settings["heat"] = "normaali"
+    game.settings["pickups"] = "normaali"
+    game.sync_cpus()
+    human = ScriptPad("human-%d" % seed)
+    human.bot = Bot("ihminen", random.Random(seed + 17))
+    game.pads[human.id] = human
+    game.add_player(human)
+    if len(game.players) != players:
+        raise SystemExit("seated %d, wanted %d" % (len(game.players), players))
+    if game.players[0].cpu:
+        raise SystemExit("seat 0 should be the human-like bot")
+    return game
+
+
+def balance_matches(difficulty, matches, rounds, seed, players=4):
+    """Headless matches. Returns a short text table of wins, spreads and lengths."""
+    os.environ["SAUNAKISA_SETTINGS"] = "/tmp/saunakisa-balance-%s.json" % difficulty
+    pygame.init()
+    screen = pygame.display.set_mode((W, H))
+    rng = random.Random(seed)
+    human_wins = 0
+    cpu_wins = 0
+    ties = 0
+    spreads = []
+    lengths = []
+    human_scores = []
+    cpu_best = []
+    for _match in range(matches):
+        match_seed = rng.randrange(1, 10 ** 9)
+        game = _seat_match(screen, players, match_seed, rounds, difficulty)
+        game.begin_round()
+        guard = 0
+        limit = FPS * (rounds * 110 + 20)
+        seen_round = 0
+        while game.state != "results" and guard < limit:
+            human = game.players[0]
+            if game.state in ("ready", "play") and game.room is not None:
+                human.pad.desired = human.pad.bot.decide(human, game.room, game.players)
+            elif game.state == "roundend":
+                if game.t == 2 and game.round_no != seen_round:
+                    seen_round = game.round_no
+                    lengths.append((game.round_total - max(0, game.round_left)) / float(FPS))
+                des = blank()
+                if game.t == 30:
+                    des["jump"] = True
+                human.pad.desired = des
+            else:
+                human.pad.desired = blank()
+            game.update()
+            guard += 1
+        banks = [p.bank for p in game.players]
+        best = max(banks) if banks else 0
+        leaders = [i for i, value in enumerate(banks) if value == best]
+        if len(leaders) != 1:
+            ties += 1
+        elif leaders[0] == 0:
+            human_wins += 1
+        else:
+            cpu_wins += 1
+        ordered = sorted(banks, reverse=True)
+        spreads.append(ordered[0] - ordered[1] if len(ordered) > 1 else 0)
+        human_scores.append(banks[0])
+        cpu_best.append(max(banks[1:]) if len(banks) > 1 else 0)
+    mean_len = sum(lengths) / float(len(lengths)) if lengths else 0
+    mean_spread = sum(spreads) / float(len(spreads)) if spreads else 0
+    lines = [
+        "difficulty %s  matches %d  rounds %d  players %d" % (difficulty, matches, rounds, players),
+        "human wins %d  cpu wins %d  ties %d" % (human_wins, cpu_wins, ties),
+        "mean human score %.0f  mean best cpu %.0f  mean winner margin %.0f" % (
+            sum(human_scores) / float(matches),
+            sum(cpu_best) / float(matches),
+            mean_spread,
+        ),
+        "round length mean %.1fs  min %.1fs  max %.1fs  n %d" % (
+            mean_len,
+            min(lengths) if lengths else 0,
+            max(lengths) if lengths else 0,
+            len(lengths),
+        ),
+    ]
+    return "\n".join(lines)
